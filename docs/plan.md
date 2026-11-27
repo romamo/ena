@@ -17,6 +17,22 @@ The demo is one loop that works end to end:
 
 **The gate** sets it apart: the agent pays on its own up to a limit the owner sets, asks the owner above it, and leaves a receipt for every action. The organisers' Open Day slides list exactly these guardrails (spending limits, human review, log everything), so the pitch uses their words.
 
+## Owner journey (demo script)
+
+One month of a bakery owner with Ena, replayed from the synthetic month. The amounts are placeholders until the interviews.
+
+| Stage | Owner does | Ena does | Owner's time |
+|---|---|---|---|
+| Set up (day 1) | Connects the BoC account, sets a €500 limit | Reads 3 months of history, finds the suppliers and their rhythm | 5 min |
+| Small invoice (Monday) | Nothing; sees "Paid dairy €180" | Reads the invoice in Jinius, pays within the limit, logs a receipt | 0 |
+| Large invoice (Wednesday) | Taps Approve on "Pay the flour supplier €1,240?" | Asks above the limit, pays after approval, logs a receipt | 5 sec |
+| Lean week ahead (week 3) | Approves a €400 reserve, or the loan application | Sees the gap in the forecast, sets money aside for the installment or pre-fills a Digital Business Loan | 10 sec |
+| Month end (day 30) | Reads one screen | Books matched, cash for next month, "you stepped in 3 times" | 1 min |
+
+- The large invoice is the pitch hook: the pitch opens on that approval card and closes on its receipt
+- The last column is the one number: about 6 minutes a month with Ena after setup, against the hours the owners report in the interviews
+- The rows show the split we pitch: the owner decides, Ena does the work
+
 ## Decided
 
 - **Name: Ena** for the team and the product (2026-11-27). Greek ένα means "one": one agent for the whole back office. On stage, say it once: "Ena, one agent for your whole back office"
