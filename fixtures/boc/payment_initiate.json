@@ -1,0 +1,12 @@
+{
+  "authCodeNeeded": true,
+  "payment": {
+    "paymentId": "0603a634-90fd-4864-9990-d72520b78778",
+    "charges": [
+      {
+        "name": "Transfer_charges",
+        "value": "10"
+      }
+    ]
+  }
+}

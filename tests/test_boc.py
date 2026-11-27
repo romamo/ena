@@ -90,21 +90,25 @@ def test_create_subscription_sends_consent_headers() -> None:
 def test_consent_urls_carry_the_subscription_or_payment() -> None:
     boc = client(httpx.MockTransport(lambda _: httpx.Response(500)))
 
-    sub = parse_qs(urlsplit(boc.subscription_consent_url(SubscriptionId("Sub1"))).query)
-    pay = parse_qs(urlsplit(boc.payment_consent_url(PaymentId("P1"))).query)
+    sub = parse_qs(urlsplit(boc.subscription_consent_url(SubscriptionId("Sub1"), "st1")).query)
+    pay = parse_qs(urlsplit(boc.payment_consent_url(PaymentId("P1"), "st2")).query)
 
     assert sub["subscriptionid"] == ["Sub1"]
     assert sub["scope"] == ["UserOAuth2Security"]
     assert sub["redirect_uri"] == ["https://localhost/callback"]
+    assert sub["state"] == ["st1"]
     assert pay["paymentid"] == ["P1"]
+    assert pay["state"] == ["st2"]
 
 
 def test_auth_code_is_read_from_the_redirect() -> None:
-    assert AuthCode.from_redirect("https://localhost/callback?code=abc&x=1").value == "abc"
+    assert AuthCode.from_redirect("https://localhost/callback?code=abc&state=s", "s").value == "abc"
     with pytest.raises(ValueError, match="no `code`"):
-        AuthCode.from_redirect("https://localhost/callback")
+        AuthCode.from_redirect("https://localhost/callback", "s")
     with pytest.raises(BocError, match="consent refused: access_denied"):
-        AuthCode.from_redirect("https://localhost/callback?error=access_denied")
+        AuthCode.from_redirect("https://localhost/callback?error=access_denied", "s")
+    with pytest.raises(BocError, match="does not match"):
+        AuthCode.from_redirect("https://localhost/callback?code=abc&state=other", "s")
 
 
 def test_statement_converts_boc_dates_and_query() -> None:
