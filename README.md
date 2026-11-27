@@ -30,7 +30,11 @@ Members: Roman, Youssef and Keith. Keith's area is still to agree.
 
 ## Repository
 
-- `docs/interviews/`: the customer interview guide (English, Russian, Greek)
+- [docs/plan.md](docs/plan.md): the team plan: decisions, roles, weekend, pitch hook, the one number, open tasks
+- [docs/hackathon.md](docs/hackathon.md): the hackathon reference: APIs, links, rules, how the jury scores
+- [docs/interviews/](docs/interviews/guide.md): the customer interview guide (English, Russian, Greek)
+
+Every team member can edit these documents: change them in a pull request or push to `main`, and date each decision.
 
 ## License
 
