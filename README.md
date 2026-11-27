@@ -37,6 +37,16 @@ Members: Roman, Youssef and Keith. Keith's area is still to agree.
 
 Every team member can edit these documents: change them in a pull request or push to `main`, and date each decision.
 
+## Run
+
+Needs [uv](https://docs.astral.sh/uv/). Copy `.env.example` to `.env` and fill in the bocAPI app's client id and secret, then:
+
+```bash
+uv run ena-boc token
+```
+
+`uv run ena-boc --help` lists the steps from account consent to a payment that reaches `CPLT`. Tests: `uv run pytest`.
+
 ## License
 
 Everything in this repository is published under [CC BY-SA 4.0](LICENSE), as the hackathon rules require.
