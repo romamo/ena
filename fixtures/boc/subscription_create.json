@@ -1,0 +1,19 @@
+{
+  "duration": {
+    "startDate": "27/11/2026",
+    "endDate": "25/02/2027"
+  },
+  "subscriptionId": "Subid000001-1795809394563",
+  "status": "PENDING",
+  "accounts": {
+    "transactionHistory": true,
+    "balance": true,
+    "details": true,
+    "checkFundsAvailability": true
+  },
+  "payments": {
+    "limit": 99999999,
+    "currency": "EUR",
+    "amount": 999999999
+  }
+}

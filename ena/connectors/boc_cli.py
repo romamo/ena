@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from ena.connectors.boc import (
     AccountId,
@@ -51,7 +52,14 @@ def main(argv: list[str] | None = None) -> None:
         level={0: logging.WARNING, 1: logging.INFO}.get(args.verbose, logging.DEBUG),
         format="%(levelname)s %(name)s: %(message)s",
     )
-    settings = BocSettings()  # filled from the environment and .env
+    try:
+        settings = BocSettings()  # filled from the environment and .env
+    except ValidationError as error:
+        missing = ", ".join(f"BOC_{'_'.join(map(str, e['loc'])).upper()}" for e in error.errors())
+        raise SystemExit(
+            f"bocAPI settings invalid or missing: {missing}. Set them in .env in {Path.cwd()} "
+            "(see .env.example)"
+        ) from error
     recorder = Recorder(FIXTURES) if args.record else None
     with httpx.Client(timeout=30) as http:
         client = BocClient(settings, http, recorder)
