@@ -43,6 +43,7 @@ One month of a bakery owner with Ena, replayed from the synthetic month. The amo
 - **Loan reserve.** When the forecast sees a lean month and the business has a loan, the agent sets money aside for the installment early, so the loan stays current. Banks give relief after disasters only on loans paid on time, as Bank of Cyprus did after the 2025 wildfires (6-month moratorium) and the 2026 foot-and-mouth outbreak (12 months)
 - **Built from scratch at the event** and published under CC BY-SA 4.0, as the rules require. No code from earlier projects
 - **Stack:** the bank tools and the gate live in our own MCP server; the agent on top is swappable. IBM Bob and watsonx Orchestrate are not used; if a mentor or the jury clearly values IBM, either can be plugged in as one more MCP client (about an hour), and the pitch says "the gate works with any agent"
+- **Stack** (2026-11-27): as proposed in [build-plan.md](build-plan.md) §12: Python, FastAPI, the MCP Python SDK, SQLite, pytest, a Vite + React chat page, Claude through the Agent SDK
 - **This repo is the working copy.** The final version is submitted to the organisers separately
 
 ## Who does what

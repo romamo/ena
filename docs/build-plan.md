@@ -273,7 +273,7 @@ Notes carried from earlier reading of the BoC docs (ASSUMED, check on Friday): c
 
 ## 12. Stack and repo layout
 
-**Proposal; Roman decides** (one language for everything the juniors touch):
+**Decided by Roman, 2026-11-27** (one language for everything the juniors touch):
 
 | Part | Proposal | Why |
 |---|---|---|
