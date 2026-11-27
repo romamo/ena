@@ -1,0 +1,99 @@
+# shipmill reads this file on every run: https://github.com/shipmill/shipmill
+# The oldest shipmill this file is written for; an older one stops and says how to update
+requires = ">=0.193"
+name = "ena"
+
+# off: do nothing; dry-run: show the release commit it would make; release: release
+mode = "off"                        # a hackathon repo ships no releases (Roman, 2026-11-27); no release workflow, so no Actions minutes
+branch = "main"
+
+# pyproject: [project] version in pyproject.toml and uv.lock; none: tags and CHANGELOG only
+version_files = "none"
+
+[changelog]
+path = "CHANGELOG.md"
+style = "keep-a-changelog"
+
+[bump]
+from = "headings"
+major = ["Breaking"]
+minor = ["Added", "Changed", "Deprecated", "Removed"]
+patch = ["Fixed", "Security"]
+
+[gates]
+# An open issue with this label holds the listed lanes
+blocker_label = "release-blocker"
+blocker_lanes = ["rc", "stable"]
+# Inclusive UTC date ranges when the listed lanes hold, such as "2026-12-24..2027-01-02"
+freeze = []
+freeze_lanes = ["dev", "rc", "stable"]
+
+# Each lane releases when one of its triggers is due and no gate holds it; every lane can
+# also be started by hand. One run releases one lane, in the order hotfix, stable, rc, dev.
+
+# [lanes.dev]                       # X.Y.Z.devN after every batch of merges
+# quiet_minutes = 30
+# dispatch = ["publish.yml"]
+
+# [lanes.rc]                        # X.Y.ZrcN for people who try a change first, by hand or on a schedule
+# schedule = ["Mon-Fri 07:00 UTC"]
+# github_release = true
+
+[lanes.stable]                      # X.Y.Z after every batch of merges; a breaking change waits for you
+quiet_minutes = 30
+github_release = true
+
+[lanes.hotfix]                      # X.Y.(Z+1) from release/X.Y with chosen PRs, by hand only
+github_release = true
+
+# Environments a release deploys to. The workflow runs on workflow_dispatch with `tag` and
+# `environment` inputs, and its job sets `environment: ${{ inputs.environment }}`, so
+# GitHub records a deployment for each run. With from or health, run
+# `uvx shipmill==0.193.4 init --operate`:
+# its workflow checks health every 10 minutes and promotes after the bake.
+# [environments.staging]
+# lane = "stable"                   # deploy every release of this lane when it lands
+# workflow = "deploy.yml"
+# health = "https://staging.example.com/health"
+#
+# [environments.production]
+# from = "staging"                  # promoted from staging once it baked there
+# workflow = "deploy.yml"
+# health = "https://example.com/health"
+# bake_minutes = 60                 # how long staging stays healthy before promotion
+
+# Lines a release rewrites besides the version files; each pattern matches exactly once.
+# The replacement can use {name}, {version}, {semver}, {minor} (X.Y), and {date}.
+# [[version_lines]]
+# file = "README.md"
+# pattern = 'ena-wt-shipmill v\d+\.\d+\.\d+'
+# replace = "ena-wt-shipmill v{version}"
+
+# How far shipmill goes by itself at each stage: observe (report only), propose (open an issue
+# saying what it would do; a person does it), or act. An open issue labelled shipmill-hold
+# turns every act into propose until it is closed.
+[autonomy]
+# Roman, 2026-11-27: "Ship by itself" for the hackathon weekend, speed over review
+triage = "act"                      # verdicts, labels, closes, dispatches
+fix = "act"                         # a branch and a PR per implement
+land = "act"                        # merge on green CI; the repo has no CI yet, so a PR merges on review alone
+release = "act"                     # moot while mode = "off"
+revert = "observe"
+
+# What the gate starts a Claude Code session for; shipmill-setup writes this section with you.
+[agents]
+prompt = "/shipmill:github-issue-triage {repo} triage the new issues"
+plugin = "host"                     # each person installs the plugin
+app_id = 5209412                    # sessions write as shipmill-romamo[bot]
+mode = "headless"                   # Roman is at the hackathon, nobody watches the Mac: questions go to GitHub
+retry_hours = 24
+notify = true
+remind_hours = 4
+max_wait_minutes = 15
+
+[agents.roles]
+# Roman, 2026-11-27: every team member receives steps an agent can't do
+maintainer = ["romamo", "yossefbouz", "keithmaina123"]
+
+[product]
+standalone = true                   # one repo; not part of a venture
