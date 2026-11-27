@@ -12,7 +12,7 @@ Read 2026-11-27 from public documentation only, before any live call. No sign-up
 - Sandbox catalogue: https://sandbox.bankofcyprus.com/product and its API pages (`/product/psd2-sb-aisp-pisp-alias/api/1860`, `.../1866`, `.../1869`, `/product/b2b-sb-apis-alias/api/1863`, `.../1872`)
 - Hackathon Technical Specifications (Google Doc linked from docs/hackathon.md)
 
-Not read: the Postman suite `Sandbox samples.zip` (`/system/files/2024-09/Sandbox%20samples.zip`) and the Google Drive Postman files from the Tech Spec, because they are downloads. No public bocSDK repository was found on GitHub or the portal.
+Read later the same day: the Postman suite `Sandbox samples.zip` (https://developer.bankofcyprus.com/system/files/2024-09/Sandbox%20samples.zip, a collection and an environment dated 2024-09), summarised in section 8. Not read: the Google Drive Postman files from the Tech Spec (no link found). No public bocSDK repository was found on GitHub or the portal.
 
 ## 1. Access
 
@@ -154,3 +154,16 @@ Not found. The sandbox catalogue has five products (B2B-APIs, PSD2-AISP-PISP, PS
 | Only the SWIFT sample payee works | Use the documented creditor (`CITIUS33` / `48193222324233`) as the demo supplier's account; map invoice payee to it in seed data |
 | Statement data is thin (a few sample rows) | Books and forecast run on seeded history; live statement rows are merged and shown as "from BoC" |
 | Field names or casing differ from the docs | Parse real responses with tolerant keys at the connector boundary only, strict models inside; capture a real response before writing models |
+
+## 8. What the Postman samples add
+
+Read 2026-11-27 from `Sandbox samples.zip`: 24 requests and one environment. They confirm the paths of section 3 and add:
+
+- **Environment.** Base URL `https://sandbox-apis.bankofcyprus.com/df-boc-org-sb/sb/psd2`; sample debtor account `351012345671`; `originUserId` `999999`; `tppId` `singpaymentdata`; `client_id` and `client_secret` empty, to fill from the registered app
+- **Tokens.** `POST /oauth2/token` as a form, `grant_type=client_credentials`, `scope=TPPOAuth2Security` for the client token; `grant_type=authorization_code`, `scope=UserOAuth2Security`, `code=<from the redirect>` for the user token. `POST /oauth2/introspect` (`token`, `token_type_hint=access_token`) checks a token, which section 2 did not list
+- **Subscription body.** `accounts` {`transactionHistory`, `balance`, `details`, `checkFundsAvailability`: true} and `payments` {`limit`, `currency`, `amount`}. The sample sets `limit` 99999999 and `amount` 999999999 with no explanation, so their meaning stays UNKNOWN; treat them as caps above any demo amount. `originUserId` goes in a header on create only
+- **Subscription after consent.** The sample `PATCH /v1/subscriptions/{id}` body has `status` `INPROGRESS` and `selectedAccounts` listing six sample accounts (`351012345671`, `351012345673` to `351012345675`, `351092345672`, `351092345676`), which are the sample customer's accounts to pick from
+- **Statement.** `GET /v1/accounts/{account}/statement?startDate=dd/mm/yyyy&endDate=dd/mm/yyyy&maxCount=0`; `maxCount=0` appears to mean no cap (UNKNOWN until tried)
+- **Payment.** Sign with `POST .../jwssignverifyapi/sign` (header `tppId`), then `POST /v1/payments/initiate` with {`payload`, `signatures`} and the headers `loginTimeStamp`, `customerDevice`, `customerIp`, `customerSessionId`, `lang`; `POST /v1/payments/{id}/execute` takes an empty JSON body; `GET /v1/payments/{id}/status`, `GET /v1/payments/{id}` and `DELETE /v1/payments/{id}` follow. The sample's creditor is a SWIFT transfer (`CITIUS33`); a BoC to BoC payment between two sample accounts is the one to try first
+- **Casing varies within the collection** (`timeStamp` and `timestamp`; `customerIp` here, `customerIP` in the docs). HTTP headers are case-insensitive, so this matters only if the gateway is not; send the docs' spelling and keep the collection's as the fallback
+
