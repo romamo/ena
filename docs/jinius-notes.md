@@ -1,6 +1,20 @@
 # Jinius integration notes
 
-Read from public documentation on 2026-11-27, before any live call. Nothing here was tested against the integration environment. **UNKNOWN** marks what the public docs do not say; **ASSUMED** marks a guess we act on until a mentor or a real response confirms it.
+Read from public documentation on 2026-11-27, before any live call. **UNKNOWN** marks what the public docs do not say; **ASSUMED** marks a guess we act on until a mentor or a real response confirms it. Section 0 is what we saw in the integration portal itself; where it disagrees with later sections, section 0 wins.
+
+## 0. Integration environment as seen (2026-11-27, evening)
+
+Looked around the portal while logged in; no API call made yet.
+
+- **Portal:** `https://b2b.integration.platform.cy/` (not `b2b.jinius.com.cy`). Our team's user is admin of one legal entity, **DUMMY**, registered in October 2024 (an earlier account, reused). Profile fields are mostly empty; industry Professional Services / IT
+- **Auth:** Keycloak, realm `platform-integration`. Token endpoint is the standard Keycloak one: `https://b2b.integration.platform.cy/auth/realms/platform-integration/protocol/openid-connect/token`; the realm allows `client_credentials` (VERIFIED from its OpenID configuration). The portal itself uses the public client `b2b-portal-client`
+- **API client:** Settings → Developer already holds a Client ID and Client Secret for DUMMY (with Refresh and Delete buttons). Copy them into `.env` from that page; never into the repo or chat
+- **Webhooks exist:** the same page takes up to 3 **Callback URLs**, each with a secret key. This answers the "webhooks: UNKNOWN" row in section 5; payloads and events are still UNKNOWN (guide 6). Polling stays the plan until a callback is seen
+- **Portal API shape:** the portal calls gRPC-style paths `POST /api/cy.jinius.b2b_orchestration.v1.<Service>/<Method>` (for example `IntegrationServiceOrchestration/GetClient`, `OutboundServiceOrchestration/GetCallBackUrlsForLegalEntity`). Whether the public integration API is the same surface is UNKNOWN until guide 6
+- **Payments (Settings → Payments):** two Get Paid IBANs, a BoC one (Unverified, default) and an AstroBank one (Disabled). **Pay Others with 1bank: "Connection expired"**, asking for a B2B Company UserID to re-authorise. No "mock payment settings" control is visible; that is guide 4, which we do not have yet
+- **Activity:** invoices and remittances are all zero. Subscription shows no plan and no billing
+- **Ecosystem:** 281 businesses in the test directory (for example "AB Supplies Ltd", "Alpha Supermarkets", "Bank of Cyprus - Test"); invoices can only go to a business on Jinius, so the supplier for our demo is either a second entity of ours or one of these
+- **Still missing:** the six guides (no link in the portal; the "How can I…" help links are empty), and a second legal entity to act as the supplier ("Register new business" on the dashboard)
 
 ## 1. Sources
 
