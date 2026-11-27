@@ -103,6 +103,22 @@ Not found. The sandbox catalogue has five products (B2B-APIs, PSD2-AISP-PISP, PS
 
 ## 4. Sandbox specifics
 
+**Live run, 2026-11-27 evening** (app "Ena", redirect URI `https://localhost/callback`, `uv run ena-boc`):
+
+| Step | Result |
+|---|---|
+| Client token | Works: `TPPOAuth2Security`, `expires_in` 3600 |
+| Create subscription | Works: `PENDING`, `duration` 27/11/2026 to 25/02/2027 (90 days, not 180) |
+| GET subscription | Client token works; answers an array of one |
+| Consent screen | Now a newer login than the docs show: `sandbox.bankofcyprus.com/sandbox/login`, then `999999` / `112233`, account choice and an **OTP** field (`123456` accepted) |
+| After consent | The choice is saved (subscription turns `INPROGRESS` with `selectedAccounts`), but the browser is redirected to `https://localhost/callback?state=...&error=badstate` with no `code`. Four tries, with and without our `state`, in Chrome and in a fresh browser |
+| Read accounts on `INPROGRESS` | 400 "Status Not Active" |
+| Activate (PATCH) with the client token | 403 Forbidden; needs the user token, which needs the `code` |
+| Sign + initiate payment | Works: `authCodeNeeded: true`, a `paymentId` |
+| Payment consent | Same `error=badstate` |
+
+`badstate` comes from IBM API Connect's OAuth provider: the authorize URL gains an `rstate` when it sends the browser to the login page, and the redirect back fails that check. Open: is it a sandbox fault, or an app setting (redirect URI, the app's OAuth provider)? Asked BoC.
+
 - Test login for both consent screens: `999999` / `112233`
 - Sample accounts: `351012345671` (ANDREAS MICHAEL, EUR, IBAN `CY11002003510000000012345671`); also `351092345672`, `351012345673`, `351012345674`, `351012345675`, `351092345676` in the activate sample
 - Sample payment: debtor `351012345671` → creditor BIC `CITIUS33`, account `48193222324233`, EUR 30, "SWIFT Transfer". Whether a BoC-to-BoC transfer between sample accounts works (and what `bankId` it needs) is UNKNOWN
