@@ -2,6 +2,8 @@
 
 One agent for a micro-business's back office. Built at [BoC Fintech Hackathon 7.0](https://bochackathon.net), Nicosia, 27 to 29 November 2026.
 
+> This is the team's working copy. The final version is submitted to the organisers separately.
+
 Ena is an AI back-office agent for micro-businesses and the self-employed who bank with Bank of Cyprus. A barber or a bakery owner pays supplier invoices from a phone, does the books at night and finds out cash is short when a payment bounces. Ena takes that work off them in one loop: it receives supplier invoices through Jinius, pays them from the BoC account, keeps the books from bocAPI and JCC card data, forecasts cash for the coming weeks and, when a lean month is ahead, sets money aside for loan installments or offers a BoC Digital Business Loan for working capital. The owner sets a limit: Ena pays on its own below it, asks for approval above it and leaves a receipt for every action.
 
 ## The loop
