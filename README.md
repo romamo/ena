@@ -26,6 +26,8 @@ The gate: Ena pays within the owner's limit, asks above it and leaves a receipt 
 | Presentation, idea work, customer interviews | Together |
 | Demo, submission and organisers | Open |
 
+Members: Roman, Youssef and Keith. Keith's area is still to agree.
+
 ## Repository
 
 - `docs/interviews/`: the customer interview guide (English, Russian, Greek)
