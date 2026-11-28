@@ -88,6 +88,14 @@ h1, h3, p { margin: 0; }
 .approval { border-color: var(--warn); }
 .receipt.result-paid { border-color: var(--good); }
 .receipt.result-failed, .receipt.result-declined { border-color: var(--bad); }
+.pay-link { border-color: var(--good); }
+.pay-link .qr {
+  width: min(240px, 100%);
+  aspect-ratio: 1;
+  align-self: center;
+  background: #fff;
+  image-rendering: pixelated;
+}
 
 .label {
   font-size: 11px;

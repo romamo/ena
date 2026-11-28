@@ -1,3 +1,4 @@
+import QRCode from "qrcode";
 import { createContext, useContext, useEffect, useState } from "react";
 import {
   ApiError,
@@ -11,6 +12,7 @@ import {
   type ConsentCard,
   type ForecastCard,
   type OfferCard,
+  type PayLinkCard,
   type ReceiptCard,
 } from "./api";
 import { day, dayTime, euro } from "./format";
@@ -28,6 +30,7 @@ const CARD_TAB: Record<CardEvent["card_kind"], BoardTab> = {
   forecast: "forecast",
   offer: "credit",
   account: "overview",
+  pay_link: "receipts",
 };
 
 /** Opens the dashboard on a tab; given only in the chat, so a card there links to it. */
@@ -63,6 +66,8 @@ export function Card({ event }: { event: CardEvent }) {
       return <Forecast card={event.card} />;
     case "offer":
       return <Offer card={event.card} />;
+    case "pay_link":
+      return <PayLink card={event.card} />;
   }
 }
 
@@ -312,6 +317,58 @@ function Forecast({ card }: { card: ForecastCard }) {
       </ol>
       <p className="muted">{card.reason}</p>
       <BoardLink kind="forecast" />
+    </article>
+  );
+}
+
+/** The pay link as an SVG QR code, drawn in the page: the link never leaves it. */
+function useQr(url: string): string | null {
+  const [svg, setSvg] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    setSvg(null);
+    void QRCode.toString(url, { type: "svg", margin: 1, errorCorrectionLevel: "M" }).then(
+      (drawn) => {
+        if (current) setSvg(drawn);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [url]);
+  return svg;
+}
+
+function PayLink({ card }: { card: PayLinkCard }) {
+  const svg = useQr(card.url);
+  return (
+    <article className="card pay-link" aria-label="Pay link">
+      <header>
+        <h3>Card payment link</h3>
+        <Label>{card.sandbox ? "JCC sandbox" : "JCC"}</Label>
+      </header>
+      <p className="amount">{euro(card.amount_cents)}</p>
+      <p>{card.description}</p>
+      {svg === null ? (
+        <p className="muted small">Drawing the QR code…</p>
+      ) : (
+        <img
+          className="qr"
+          alt={`QR code to pay ${euro(card.amount_cents)} by card`}
+          src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`}
+        />
+      )}
+      <a href={card.url} target="_blank" rel="noreferrer noopener">
+        Open the payment page
+      </a>
+      <p className="muted">
+        Nothing has moved yet: the sale is booked when JCC confirms the card payment.
+        {card.sandbox ? " Only a test card pays it." : ""}
+      </p>
+      <p className="muted small">
+        Open until {dayTime(card.expires_at)} · {card.id}
+      </p>
+      <BoardLink kind="pay_link" />
     </article>
   );
 }

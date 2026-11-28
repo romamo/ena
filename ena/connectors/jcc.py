@@ -1,7 +1,12 @@
-"""JCC payment gateway connector: verify a callback and confirm a deposit with order status.
+"""JCC payment gateway connector: register a pay link, verify a callback, confirm a deposit.
 
-The callback, its checksum and the order-status response follow docs/jcc-notes.md §0, §3
-and §4, and the requests saved in `fixtures/jcc/`.
+The registration, the callback, its checksum and the order-status response follow
+docs/jcc-notes.md §0, §2, §3 and §4, and the requests saved in `fixtures/jcc/`.
+
+- `register.do` creates a one-phase order and answers its `formUrl`, the hosted payment
+  page: a one-off pay link. Its `returnUrl` is mandatory and absolute; `dynamicCallbackUrl`
+  is sent only when set, since the sandbox's callback came from the portal's Static webhook
+  (§0). The link stays payable for `link_seconds` (`sessionTimeoutSecs`)
 
 - The callback is a form-encoded POST: `mdOrder`, `orderNumber`, `operation`, `status` and
   `checksum`, plus any extra fields configured in the Merchant Portal
@@ -31,7 +36,7 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ena.models import CardSale
@@ -42,6 +47,9 @@ EUR = "978"
 PAID = 2
 """`orderStatus` of an order authorized and captured (docs/jcc-notes.md §4)."""
 UNSIGNED_FIELDS = frozenset({"checksum", "sign_alias"})
+TEST_HOST = "gateway-test.jcc.com.cy"
+MAX_DESCRIPTION = 598
+"""The longest `description` `register.do` takes (docs/jcc-notes.md §2)."""
 
 
 class JccError(RuntimeError):
@@ -68,6 +76,12 @@ class JccSettings(BaseSettings):
     api_password: SecretStr
     callback_secret: SecretStr
     """The webhook's symmetric signing secret (Settings > Merchant > Webhooks)."""
+    return_url: AnyHttpUrl | None = None
+    """Where the payer's browser goes after paying; without it Ena creates no pay link."""
+    callback_url: AnyHttpUrl | None = None
+    """Sent as `dynamicCallbackUrl` when set; the portal's Static webhook works without it."""
+    link_seconds: int = Field(default=3_600, gt=0)
+    """How long a pay link stays payable (`sessionTimeoutSecs`; JCC's default is 1,200)."""
 
     @field_validator("callback_secret", "api_password")
     @classmethod
@@ -122,6 +136,27 @@ def verify_checksum(fields: Mapping[str, str], secret: SecretStr) -> None:
 
 class _Model(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
+
+
+class Registration(_Model):
+    """`register.do`'s answer (fixtures/jcc/register.json): the order and its pay link."""
+
+    order_id: OrderId = Field(alias="orderId")
+    form_url: AnyHttpUrl = Field(alias="formUrl")
+
+    @field_validator("order_id", mode="before")
+    @classmethod
+    def _order_id(cls, value: object) -> OrderId:
+        if not isinstance(value, str):
+            raise ValueError(f"orderId must be a string, got {value!r}")
+        return OrderId(value)
+
+    @field_validator("form_url")
+    @classmethod
+    def _https(cls, value: AnyHttpUrl) -> AnyHttpUrl:
+        if value.scheme != "https":
+            raise ValueError(f"formUrl must be https, got {value}")
+        return value
 
 
 class Callback(_Model):
@@ -207,6 +242,42 @@ class JccClient:
     def __init__(self, settings: JccSettings, http: httpx.AsyncClient) -> None:
         self.settings = settings
         self.http = http
+
+    @property
+    def sandbox(self) -> bool:
+        """Whether this is JCC's test gateway, where only test cards pay."""
+        return httpx.URL(self.settings.base_url).host == TEST_HOST
+
+    @property
+    def issues_links(self) -> bool:
+        """Whether pay links can be registered: `register.do` needs a return URL."""
+        return self.settings.return_url is not None
+
+    async def register(
+        self, order_number: str, amount_cents: int, description: str
+    ) -> Registration:
+        """A one-phase EUR order for `amount_cents`; its `formUrl` is the pay link."""
+        if self.settings.return_url is None:
+            raise JccError("register.do needs JCC_RETURN_URL")
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,36}", order_number):
+            raise ValueError(f"not an order number JCC takes: {order_number!r}")
+        if type(amount_cents) is not int or amount_cents <= 0:
+            raise ValueError(f"the amount must be a positive number of cents, got {amount_cents!r}")
+        if not description.strip() or len(description) > MAX_DESCRIPTION:
+            raise ValueError(f"the description must be 1 to {MAX_DESCRIPTION} characters")
+        params = {
+            "orderNumber": order_number,
+            "amount": str(amount_cents),
+            "currency": EUR,
+            "returnUrl": str(self.settings.return_url),
+            "description": description,
+            "language": "en",
+            "sessionTimeoutSecs": str(self.settings.link_seconds),
+        }
+        if self.settings.callback_url is not None:
+            params["dynamicCallbackUrl"] = str(self.settings.callback_url)
+        data = await self._call("register.do", params)
+        return Registration.model_validate(data)
 
     async def order_status(self, order: OrderId) -> OrderStatus:
         data = await self._call("getOrderStatusExtended.do", {"orderId": str(order)})

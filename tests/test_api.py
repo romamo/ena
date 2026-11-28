@@ -85,7 +85,7 @@ class ScriptedAgent:
         for step in self.steps:
             match step:
                 case Call():
-                    call_tool(self.tools, step.tool, step.arguments)
+                    await call_tool(self.tools, step.tool, step.arguments)
                 case Say():
                     yield step.text
                 case Fail():

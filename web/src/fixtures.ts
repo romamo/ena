@@ -105,6 +105,21 @@ export const DECLINED: CardEvent = {
   },
 };
 
+export const PAY_LINK: CardEvent = {
+  kind: "card",
+  card_kind: "pay_link",
+  card: {
+    id: "ena-0123456789abcdef",
+    jcc_order_id: "d7772205-fe5a-7f7a-832c-cc3a2eff63a5",
+    amount_cents: 1500,
+    description: "Two loaves and a coffee",
+    url: "https://gateway-test.jcc.com.cy/payment/merchants/multiecom/payment.html?mdOrder=d7772205-fe5a-7f7a-832c-cc3a2eff63a5&language=en",
+    created_at: "2026-11-16T09:00:00Z",
+    expires_at: "2026-11-16T10:00:00Z",
+    sandbox: true,
+  },
+};
+
 // The dashboard's answers for the same day (ena/dashboard.py), the flour invoice pending
 
 export const OVERVIEW: Overview = {

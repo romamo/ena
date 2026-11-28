@@ -16,7 +16,8 @@ The app the demo runs, built from `.env` as each module reads it:
   sandbox and executed once the owner confirms it in BoC's screen, and the agent can read
   the sandbox account's balance and statement (`get_bank_account`)
 - The chat agent (`ena/agent.py`, `ENA_*`) and the reply cache, in memory or in `--cache`
-- The JCC client (`JCC_*`) for `POST /jcc/callback`
+- The JCC client (`JCC_*`) for `POST /jcc/callback`, and for the agent's
+  `create_pay_link` when `JCC_RETURN_URL` is set too
 - The Jinius buyer's client (`JINIUS_*`) for `GET /jinius/invoices`, the dashboard's
   "Read invoices from Jinius" button. It only reads: the month's invoices stay the seed's
 
@@ -281,9 +282,6 @@ def build(
     gate = Gate(month.business, store, StandInBank() if bank is None else bank, _now)
     today = ReplayDay(settings.day)
     ledger = Ledger(month, store, today)
-    tools = EnaTools(ledger, store, gate, _now, reader)
-    agent = (claude_runner(settings) if runner is None else runner)(tools)
-    chat = Chat(tools, agent, today, ReplyCache(SEED, settings.cache))
 
     if settings.jcc is None:
         # create_app refuses an empty secret: an unguessable one, and a client that never
@@ -308,9 +306,20 @@ def build(
         def read_jinius() -> PayableFeed:
             return read_payable(jinius)
 
+    jcc = JccClient(jcc_settings, http)
+    tools = EnaTools(
+        ledger,
+        store,
+        gate,
+        _now,
+        reader,
+        pay_links=jcc if settings.jcc is not None else None,
+    )
+    agent = (claude_runner(settings) if runner is None else runner)(tools)
+    chat = Chat(tools, agent, today, ReplyCache(SEED, settings.cache))
     app = create_app(
         store,
-        JccClient(jcc_settings, http),
+        jcc,
         jcc_settings.callback_secret,
         chat=chat,
         gate=gate,
@@ -389,6 +398,8 @@ def main(argv: list[str] | None = None) -> None:
         log.warning("%s; /chat answers with an error event", NO_CREDENTIAL)
     if settings.jcc is None:
         log.warning("%s in .env; %s refuses every call", NO_JCC, CALLBACK_PATH)
+    elif settings.jcc.return_url is None:
+        log.warning("JCC_RETURN_URL is not set in .env: the agent creates no pay link")
     if settings.jinius is None:
         log.warning("%s; /jinius/invoices answers 503", NO_JINIUS)
     where = "memory" if settings.store is None else settings.store

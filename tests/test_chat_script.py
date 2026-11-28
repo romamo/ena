@@ -267,7 +267,9 @@ def setup(question: Question) -> Setup:
 def tool_figures(question: Question) -> set[int]:
     """Every euro figure the question's tools return on its day, in cents."""
     s = setup(question)
-    results = [call_tool(s.tools, call.tool, dict(call.arguments)) for call in question.tools]
+    results = [
+        asyncio.run(call_tool(s.tools, call.tool, dict(call.arguments))) for call in question.tools
+    ]
     s.store.close()
     return {cents(figure) for text in results for figure in figures_in(text)}
 
@@ -309,7 +311,9 @@ class RestatingAgent:
     calls: tuple[ToolCall, ...]
 
     async def run(self, prompt: str) -> AsyncIterator[str]:
-        results = [call_tool(self.tools, call.tool, dict(call.arguments)) for call in self.calls]
+        results = [
+            await call_tool(self.tools, call.tool, dict(call.arguments)) for call in self.calls
+        ]
         if not results:
             yield "Δεν ξέρω." if GREEK.search(prompt) else "I don't know."
             return
