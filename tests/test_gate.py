@@ -389,7 +389,8 @@ def test_the_store_has_no_api_to_change_or_delete_a_receipt_or_an_attempt() -> N
         "add_approval",
         "approval",
         "pending_approval_for",
-        "decide_approval",
+        "record_approval",
+        "record_decline",
     }
 
 
@@ -410,4 +411,70 @@ def test_the_store_refuses_to_decide_a_request_twice(gate: Gate, store: Store) -
     )
 
     with pytest.raises(StoreError, match="not pending"):
-        store.decide_approval(approved)
+        store.record_approval(approved, "inv-17", T1)
+    assert not store.has_attempt("inv-17")
+
+
+# A decision and its next write land together
+
+
+def _decided(request: ApprovalRequest, status: ApprovalStatus) -> ApprovalRequest:
+    return ApprovalRequest.model_validate(
+        {**request.model_dump(), "status": status, "decided_at": T1}
+    )
+
+
+@dataclass
+class BreakingClock:
+    """Timezone-aware for the first `good` calls, naive after: the gate breaks off there."""
+
+    good: int
+
+    def __call__(self) -> dt.datetime:
+        self.good -= 1
+        return T0 if self.good >= 0 else T0.replace(tzinfo=None)
+
+
+def test_an_approve_that_breaks_off_never_leaves_the_ref_stuck(
+    store: Store, bank: FakeBank
+) -> None:
+    gate = Gate(BUSINESS, store, bank, BreakingClock(good=2))
+    request = _pending(gate)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        gate.approve(request.id)
+
+    restarted = Gate(BUSINESS, store, bank, FakeClock())
+    with pytest.raises(GateError, match="may have gone out"):
+        restarted.request_payment("pay_invoice", 124_000, "inv-17")
+    assert len(bank.calls) <= 1
+
+
+def test_an_approval_whose_attempt_fails_stays_pending(store: Store) -> None:
+    gate = Gate(BUSINESS, store, FakeBank(), FakeClock())
+    request = _pending(gate)
+    store.add_attempt("inv-17", T0)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        store.record_approval(_decided(request, ApprovalStatus.APPROVED), "inv-17", T1)
+    assert store.pending_approval_for("inv-17") == request
+
+
+def test_a_decline_whose_receipt_fails_stays_pending(store: Store) -> None:
+    gate = Gate(BUSINESS, store, FakeBank(), FakeClock())
+    request = _pending(gate)
+    declined = _decided(request, ApprovalStatus.DECLINED)
+    receipt = Receipt(
+        id="receipt-inv-17",
+        at=T1,
+        actor=Actor.OWNER,
+        action="pay_invoice",
+        amount_cents=124_000,
+        ref="inv-17",
+        result="declined",
+        explanation="Declined by the owner; nothing was paid",
+    )
+    store.add_receipt(receipt.model_copy(update={"id": "receipt-other"}))
+
+    with pytest.raises(sqlite3.IntegrityError):
+        store.record_decline(declined, receipt)
+    assert store.pending_approval_for("inv-17") == request

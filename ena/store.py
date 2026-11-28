@@ -2,7 +2,8 @@
 
 Receipts are append-only: the store can insert and read them, never change or delete one.
 At most one receipt exists per ref, so a payment can never be recorded twice.
-An approval request is inserted pending and decided once; its ref is kept beside it.
+An approval request is inserted pending and decided once, in the same transaction as
+its next write (the attempt to pay, or the declined receipt); its ref is kept beside it.
 A payment attempt is recorded for a ref before the bank is called, also append-only,
 so a payment whose outcome is unknown is never sent twice.
 """
@@ -115,19 +116,41 @@ class Store:
         ).fetchone()
         return None if row is None else ApprovalRequest.model_validate_json(row[0])
 
-    def decide_approval(self, decided: ApprovalRequest) -> None:
-        """Record the decision on a pending request; fail when it isn't pending."""
-        if decided.status is ApprovalStatus.PENDING:
-            raise StoreError(f"approval {decided.id}: a decision cannot be pending")
+    def record_approval(self, approved: ApprovalRequest, ref: str, attempt_at: dt.datetime) -> None:
+        """Approve a pending request and record the attempt to pay it, in one transaction.
+
+        A crash can leave the request pending, or approved with its attempt on record,
+        never approved with no attempt (a ref that could be neither paid nor retried).
+        """
+        if approved.status is not ApprovalStatus.APPROVED:
+            raise StoreError(f"approval {approved.id}: expected approved, got {approved.status}")
         with self._db:
-            cursor = self._db.execute(
-                "UPDATE approvals SET status = ?, body = ? WHERE id = ? AND status = ?",
-                (
-                    decided.status.value,
-                    decided.model_dump_json(),
-                    decided.id,
-                    ApprovalStatus.PENDING.value,
-                ),
+            self._decide(approved)
+            self._db.execute(
+                "INSERT INTO attempts (ref, at) VALUES (?, ?)", (ref, attempt_at.isoformat())
             )
+
+    def record_decline(self, declined: ApprovalRequest, receipt: Receipt) -> None:
+        """Decline a pending request and write its receipt, in one transaction."""
+        if declined.status is not ApprovalStatus.DECLINED:
+            raise StoreError(f"approval {declined.id}: expected declined, got {declined.status}")
+        with self._db:
+            self._decide(declined)
+            self._db.execute(
+                "INSERT INTO receipts (id, ref, body) VALUES (?, ?, ?)",
+                (receipt.id, receipt.ref, receipt.model_dump_json()),
+            )
+
+    def _decide(self, decided: ApprovalRequest) -> None:
+        """Inside the caller's transaction: record the decision on a pending request."""
+        cursor = self._db.execute(
+            "UPDATE approvals SET status = ?, body = ? WHERE id = ? AND status = ?",
+            (
+                decided.status.value,
+                decided.model_dump_json(),
+                decided.id,
+                ApprovalStatus.PENDING.value,
+            ),
+        )
         if cursor.rowcount != 1:
             raise StoreError(f"approval {decided.id} is not pending")

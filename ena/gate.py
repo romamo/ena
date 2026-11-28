@@ -76,7 +76,8 @@ class Gate:
             return pending
         limit = self._business.auto_pay_limit_cents
         if amount_cents <= limit:
-            return self._execute(
+            self._store.add_attempt(ref, self._now())
+            return self._pay(
                 Actor.ENA,
                 action,
                 amount_cents,
@@ -97,8 +98,9 @@ class Gate:
 
     def approve(self, approval_id: str) -> Receipt:
         """The owner's approval: pay once and write the owner's receipt."""
-        request, ref, _ = self._decide(approval_id, ApprovalStatus.APPROVED)
-        return self._execute(
+        request, ref, now = self._decide(approval_id, ApprovalStatus.APPROVED)
+        self._store.record_approval(request, ref, now)
+        return self._pay(
             Actor.OWNER, request.action, request.amount_cents, ref, "Approved by the owner"
         )
 
@@ -115,7 +117,7 @@ class Gate:
             result=PaymentResult.DECLINED,
             explanation="Declined by the owner; nothing was paid",
         )
-        self._store.add_receipt(receipt)
+        self._store.record_decline(request, receipt)
         return receipt
 
     def _decide(
@@ -130,11 +132,10 @@ class Gate:
         decided = ApprovalRequest.model_validate(
             {**stored.request.model_dump(), "status": status, "decided_at": now}
         )
-        self._store.decide_approval(decided)
         return decided, stored.ref, now
 
-    def _execute(self, actor: Actor, action: str, amount_cents: int, ref: str, why: str) -> Receipt:
-        self._store.add_attempt(ref, self._now())
+    def _pay(self, actor: Actor, action: str, amount_cents: int, ref: str, why: str) -> Receipt:
+        """Call the bank and write the receipt; the caller has recorded the attempt."""
         status = self._bank.pay(action, amount_cents, ref)
         if status == COMPLETED:
             result = PaymentResult.PAID
