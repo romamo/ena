@@ -64,6 +64,10 @@ CREDENTIAL_ENV = ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")
 NO_CREDENTIAL = "no Anthropic credential: set ANTHROPIC_API_KEY in the shell that runs ena-serve"
 NO_JCC = "JCC is not configured: set JCC_API_USER, JCC_API_PASSWORD and JCC_CALLBACK_SECRET"
 CALLBACK_PATH = "/jcc/callback"
+SIMULATED_PAYMENTS = (
+    "payments are simulated: the stand-in bank completes every payment, so a receipt says"
+    " paid though no money moved"
+)
 
 
 class ServeSettings(BaseModel):
@@ -168,6 +172,8 @@ def build(
     if settings.store is not None:
         settings.store.parent.mkdir(parents=True, exist_ok=True)
     store = Store(":memory:" if settings.store is None else settings.store)
+    if bank is None:
+        log.warning(SIMULATED_PAYMENTS)
     gate = Gate(month.business, store, StandInBank() if bank is None else bank, _now)
     today = ReplayDay(settings.day)
     tools = EnaTools(Ledger(month, store, today), store, gate, _now)

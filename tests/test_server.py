@@ -6,6 +6,7 @@ No model, no network, no port: the app is driven through `TestClient`.
 
 import datetime as dt
 import json
+import logging
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,7 @@ from ena.server import (
     DEFAULT_STORE,
     NO_CREDENTIAL,
     NO_JCC,
+    SIMULATED_PAYMENTS,
     Server,
     ServeSettings,
     build,
@@ -143,6 +145,12 @@ def test_with_jcc_settings_the_callback_checks_its_checksum() -> None:
 def test_the_owner_taps_reach_the_gate(served: tuple[Server, TestClient, Agents]) -> None:
     _, http, _ = served
     assert http.post("/approvals/approval-nope/approve").status_code == 409
+
+
+def test_the_stand_in_bank_says_payments_are_simulated(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="ena.server"):
+        build(settings(), runner=Agents()).close()
+    assert SIMULATED_PAYMENTS in caplog.messages
 
 
 def test_the_store_file_is_created_under_its_folder(tmp_path: Path) -> None:
