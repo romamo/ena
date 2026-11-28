@@ -7,7 +7,7 @@ Read from public documentation on 2026-11-27, before any live call. **UNKNOWN** 
 Looked around the portal while logged in; no API call made yet.
 
 - **Portal:** `https://b2b.integration.platform.cy/` (not `b2b.jinius.com.cy`). Our team's user is admin of one legal entity, **DUMMY**, registered in October 2024 (an earlier account, reused). Profile fields are mostly empty; industry Professional Services / IT
-- **Auth:** Keycloak, realm `platform-integration`. Token endpoint is the standard Keycloak one: `https://b2b.integration.platform.cy/auth/realms/platform-integration/protocol/openid-connect/token`; the realm allows `client_credentials` (VERIFIED from its OpenID configuration). The portal itself uses the public client `b2b-portal-client`
+- **Auth:** Keycloak, realm `platform-integration`. Token endpoint is the standard Keycloak one: `https://b2b.integration.platform.cy/auth/realms/platform-integration/protocol/openid-connect/token`; the realm allows `client_credentials` (VERIFIED from its OpenID configuration). The portal itself uses the public client `b2b-portal-client`. **The integration API refuses this realm's token** (401 `Jwt issuer is not configured`, 2026-11-28): use the API host's `/oauth/token` below
 - **API client:** Settings → Developer already holds a Client ID and Client Secret for DUMMY (with Refresh and Delete buttons). Copy them into `.env` from that page; never into the repo or chat
 - **Webhooks exist:** the same page takes up to 3 **Callback URLs**, each with a secret key. This answers the "webhooks: UNKNOWN" row in section 5; payloads and events are still UNKNOWN (guide 6). Polling stays the plan until a callback is seen
 - **Portal API shape:** the portal calls gRPC-style paths `POST /api/cy.jinius.b2b_orchestration.v1.<Service>/<Method>` (for example `IntegrationServiceOrchestration/GetClient`, `OutboundServiceOrchestration/GetCallBackUrlsForLegalEntity`). It is **not** the integration API: see the token test below
@@ -37,7 +37,7 @@ Looked around the portal while logged in; no API call made yet.
 
 The guides, the Swagger file (Jinius Integrations API 3.0, 2026-10-07) and the Postman collection came from the Jinius team (#26). They answer most UNKNOWNs in section 5; this subsection wins over it.
 
-- **API host:** `https://api.integration.platform.cy` (the portal host only serves the portal). Token: `POST /oauth/token`, form `grant_type=client_credentials` with the Client ID and Secret; same 5-minute token as the Keycloak URL above
+- **API host:** `https://api.integration.platform.cy` (the portal host only serves the portal). Token: `POST /oauth/token`, form `grant_type=client_credentials` with the Client ID and Secret; a 5-minute token, no refresh token. This is the only token the API accepts: one from the Keycloak URL above gets 401 `Jwt issuer is not configured`
 - **Plan gate is enforced.** DUMMY was on **Basic** (Settings → Subscription; the integration environment bills €0.00): `/v3/invoices/*` and `/v3/marketplace/*` answered **403 with an empty body**, `/v3/legalEntities` answered normally. After switching DUMMY to **Enterprise** the same token gets **200**. A 403 with an empty body means "plan", not "token"
 - **Seeding is done in the portal:** Ena Flour Mill → Invoices → Receivables → Add new. Required: recipient, number, issue and due date, at least one line, and an **invoice PDF** ("Invoice file is required"). The portal's date picker stores a typed due date one day early (typed 12-12, stored 11-12)
 - **Buyer reads** (VERIFIED, saved in `fixtures/jinius/`):
@@ -95,12 +95,11 @@ Jinius is a Bank of Cyprus B2B platform: e-invoicing between registered companie
 `.env.example` names (values never committed):
 
 ```
-JINIUS_TOKEN_URL=https://b2b.integration.platform.cy/auth/realms/platform-integration/protocol/openid-connect/token
 JINIUS_CLIENT_ID=               # buyer: DUMMY (in .env since 2026-11-28)
 JINIUS_CLIENT_SECRET=
-JINIUS_SUPPLIER_CLIENT_ID=      # Ena Flour Mill Ltd, once Jinius approves it (#26)
+JINIUS_SUPPLIER_CLIENT_ID=      # Ena Flour Mill Ltd: approved, no API client yet
 JINIUS_SUPPLIER_CLIENT_SECRET=
-JINIUS_BASE_URL=                # integration API base, UNKNOWN until guide 6
+JINIUS_BASE_URL=https://api.integration.platform.cy   # token from {base}/oauth/token
 JINIUS_DEBTOR_ACCOUNT=          # buyer's BoC account number for remittance files
 ```
 
@@ -119,7 +118,7 @@ None of the six is public; the Technical Specifications list only their titles. 
 
 | Need | Method, path | Key fields | Status |
 |---|---|---|---|
-| Get a token | `POST https://b2b.integration.platform.cy/auth/realms/platform-integration/protocol/openid-connect/token`, form `grant_type=client_credentials` | Client ID, Client Secret | VERIFIED 2026-11-28 (section 0): 5-minute token, no refresh, one legal entity per client |
+| Get a token | `POST https://api.integration.platform.cy/oauth/token`, form `grant_type=client_credentials` | Client ID, Client Secret | VERIFIED 2026-11-28 (section 0): 5-minute token, no refresh, one legal entity per client. The Keycloak realm's token is refused by the API |
 | Supplier submits an invoice or credit note (to seed the demo) | UNKNOWN | invoice number, issue date, due date, buyer, business unit, currency, line items (description, quantity, price, tax, discount), file, supporting documents (up to 15) | Operation exists (Help Center); path and field names UNKNOWN |
 | Buyer lists incoming invoices | UNKNOWN | portal filters suggest: invoice number, currency, issue date range, due date range, company, recipient business unit, status | UNKNOWN whether the API exposes it; the public docs describe the integration as "submit invoices and credit notes", and say both sides can review and settle from their ERP |
 | Read one invoice | UNKNOWN | amounts, VAT per line, due date, outstanding amount, history | UNKNOWN |
