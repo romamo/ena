@@ -60,6 +60,8 @@ export type AccountCard = {
   lines: BankLine[];
   /** The sandbox refused a fresh read: the last copy, as of `read_at`. */
   stale: boolean;
+  /** The sandbox refused the statement: the lines are an older copy, or none. */
+  lines_stale: boolean;
 };
 
 export type ForecastWeek = {

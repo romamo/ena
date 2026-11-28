@@ -218,5 +218,6 @@ export const ACCOUNT: CardEvent = {
     read_at: "2026-11-28T09:00:00Z",
     lines: [{ id: "t-1", date: "2026-11-25", amount_cents: 12025, direction: "in", description: "Deposit" }],
     stale: false,
+    lines_stale: false,
   },
 };

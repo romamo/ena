@@ -147,12 +147,12 @@ class BocBank:
         return Executed(result.code, result.ref_number)
 
     def account(self) -> BankAccount:
-        token = self._client.client_token()
-        detail = self._client.balance(token, self._subscription, self._debtor)
-        rows = self._client.statement(
-            token, self._subscription, self._debtor, STATEMENT_SINCE, self._clock().date()
-        )
-        newest = sorted(rows, key=lambda row: (row.posting_date, row.id), reverse=True)
+        """The balance and the statement's newest lines, read now."""
+        return self.read_balance().model_copy(update={"lines": self.read_lines()})
+
+    def read_balance(self) -> BankAccount:
+        """The account and its balances, read now, with no statement lines."""
+        detail = self._client.balance(self._client.client_token(), self._subscription, self._debtor)
         return BankAccount(
             account_id=detail.account_id,
             iban=detail.iban,
@@ -160,13 +160,29 @@ class BocBank:
             available_cents=_balance(detail, "AVAILABLE"),
             current_cents=_balance(detail, "CURRENT"),
             read_at=self._clock(),
-            lines=tuple(_line(row) for row in newest[:MAX_LINES]),
+            lines=(),
         )
+
+    def read_lines(self) -> tuple[BankLine, ...]:
+        """The statement's newest lines since `STATEMENT_SINCE`, read now."""
+        rows = self._client.statement(
+            self._client.client_token(),
+            self._subscription,
+            self._debtor,
+            STATEMENT_SINCE,
+            self._clock().date(),
+        )
+        newest = sorted(rows, key=lambda row: (row.posting_date, row.id), reverse=True)
+        return tuple(_line(row) for row in newest[:MAX_LINES])
 
 
 class AccountReads:
     """The account as the agent reads it: a kept copy while it is fresh, a new read after
-    `ttl`, and the last copy, marked stale, when the sandbox refuses a new read."""
+    `ttl`, and the last copy, marked stale, when the sandbox refuses a new read.
+
+    The balance and the statement are read apart, since the sandbox caps each API on its
+    own: a refused statement keeps the balance fresh, with the last copy's lines, or none.
+    """
 
     def __init__(
         self,
@@ -189,14 +205,18 @@ class AccountReads:
         if kept is not None and self._clock() - kept.read_at < self._ttl:
             return kept
         try:
-            fresh = self._bank.account()
+            balance = self._bank.read_balance()
         except _BANK_ERRORS as error:
             if kept is None:
-                raise
-            log.warning(
-                "the sandbox refused a fresh account read, serving the last copy: %s", error
-            )
+                raise BankUnavailable(f"the sandbox refused the account read: {error}") from error
+            log.warning("the sandbox refused a balance read, serving the last copy: %s", error)
             return kept.model_copy(update={"stale": True})
+        try:
+            lines, lines_stale = self._bank.read_lines(), False
+        except _BANK_ERRORS as error:
+            log.warning("the sandbox refused the statement, keeping the last lines: %s", error)
+            lines, lines_stale = (() if kept is None else kept.lines), True
+        fresh = balance.model_copy(update={"lines": lines, "lines_stale": lines_stale})
         self._store.keep_bank_account(fresh)
         return fresh
 

@@ -262,6 +262,9 @@ function Account({ card }: { card: AccountCard }) {
           The sandbox allows only a few account reads a day, so this is the last copy it gave.
         </p>
       ) : null}
+      {card.lines_stale ? (
+        <p className="muted small">The sandbox refused the statement today: these lines are older.</p>
+      ) : null}
       {card.lines.length > 0 ? (
         <ol className="lines">
           {card.lines.map((line) => (

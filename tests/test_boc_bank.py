@@ -19,14 +19,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ena.agent import AgentRunner, AgentSettings
-from ena.connectors.boc import (
-    SAMPLE_CREDITOR,
-    SAMPLE_CREDITOR_BANK,
-    BocClient,
-    BocError,
-    BocSettings,
-)
+from ena.connectors.boc import SAMPLE_CREDITOR, SAMPLE_CREDITOR_BANK, BocClient, BocSettings
 from ena.connectors.boc_bank import ACCOUNT_TTL, AccountReads, BocBank
+from ena.gate import BankUnavailable
 from ena.mcp_server import EnaTools, call_tool
 from ena.seed import LEAN_WEEK, synthetic_month
 from ena.server import ServeSettings, build, load_boc
@@ -516,7 +511,7 @@ def test_a_read_is_served_again_until_it_is_old(store: Store) -> None:
     assert store.bank_account() == fresh
 
 
-def test_a_refused_read_serves_the_last_copy_marked_stale(store: Store) -> None:
+def test_a_refused_statement_keeps_the_balance_fresh_and_the_last_lines(store: Store) -> None:
     sandbox, clock = Sandbox(), Clock()
     first = reads(sandbox, store, clock).account()
     clock.now = NOW + ACCOUNT_TTL
@@ -524,14 +519,35 @@ def test_a_refused_read_serves_the_last_copy_marked_stale(store: Store) -> None:
 
     served = reads(sandbox, store, clock).account()
 
-    assert served == first.model_copy(update={"stale": True})
+    assert (served.read_at, served.stale, served.lines_stale) == (NOW + ACCOUNT_TTL, False, True)
+    assert served.lines == first.lines
+    assert store.bank_account() == served
+
+
+def test_a_refused_balance_serves_the_last_copy_marked_stale(store: Store) -> None:
+    sandbox, clock = Sandbox(), Clock()
+    first = reads(sandbox, store, clock).account()
+    clock.now = NOW + ACCOUNT_TTL
+    sandbox.refuse = {"/balance": REFUSED_037}
+
+    assert reads(sandbox, store, clock).account() == first.model_copy(update={"stale": True})
     assert store.bank_account() == first
 
 
-def test_a_refused_first_read_fails_loudly(store: Store) -> None:
+def test_a_first_read_with_a_refused_statement_shows_the_balance_and_no_lines(
+    store: Store,
+) -> None:
     sandbox = Sandbox(refuse={"/statement": REFUSED_037})
 
-    with pytest.raises(BocError, match="037"):
+    served = reads(sandbox, store, Clock()).account()
+
+    assert (served.available_cents, served.lines, served.lines_stale) == (825_050, (), True)
+
+
+def test_a_refused_first_balance_read_fails_loudly(store: Store) -> None:
+    sandbox = Sandbox(refuse={"/balance": REFUSED_037})
+
+    with pytest.raises(BankUnavailable, match="037"):
         reads(sandbox, store, Clock()).account()
     assert store.bank_account() is None
 
