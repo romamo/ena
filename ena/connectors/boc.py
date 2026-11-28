@@ -13,7 +13,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -124,7 +124,12 @@ class Money:
     @classmethod
     def parse(cls, euros: str, currency: str = "EUR") -> Money:
         """Parse an amount such as `30` or `1240.50` into cents, refusing sub-cent values."""
-        amount = Decimal(euros)
+        try:
+            amount = Decimal(euros)
+        except InvalidOperation as error:
+            raise ValueError(f"not an amount: {euros!r}") from error
+        if not amount.is_finite():
+            raise ValueError(f"not an amount: {euros!r}")
         cents = amount * 100
         if cents != cents.to_integral_value():
             raise ValueError(f"amount has more than 2 decimals: {euros!r}")

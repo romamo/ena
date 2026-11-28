@@ -190,6 +190,13 @@ def test_money_parse() -> None:
         Money.parse("0")
 
 
+@pytest.mark.parametrize("raw", ["abc", "", "Infinity", "-Infinity", "NaN", "sNaN"])
+def test_money_parse_refuses_non_amounts_with_value_error(raw: str) -> None:
+    # argparse turns only ValueError/TypeError into a usage error for `pay --amount`
+    with pytest.raises(ValueError, match="not an amount"):
+        Money.parse(raw)
+
+
 def test_execute_reports_completion() -> None:
     def handle(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/psd2/v1/payments/P1/execute"
