@@ -288,6 +288,32 @@ def test_asked_again_to_pay_a_pending_invoice_the_same_approval_card_is_shown(ap
     assert kinds(after) == ["text", "done"]
 
 
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Yes, you approved the dairy payment.",
+        "Ναι, η πληρωμή εγκρίθηκε.",  # noqa: RUF001 - "Yes, the payment was approved."
+    ],
+)
+def test_a_reply_about_a_past_approval_shows_no_pending_card(api: Api, reply: str) -> None:
+    api.chat("Pay the flour invoice", Call("pay_invoice", {"invoice_id": FLOUR.id}))
+    assert kinds(api.chat("Did I approve the dairy payment?", Say(reply))) == ["text", "done"]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Pay it? It needs your approval first.",
+        "Tap Approve on its card.",
+        "Χρειάζεται την έγκρισή σας.",  # "It needs your approval."
+        "Πατήστε για να την εγκρίνετε.",  # noqa: RUF001 - "Tap to approve it."
+    ],
+)
+def test_a_reply_asking_for_an_approval_shows_the_pending_card(api: Api, reply: str) -> None:
+    api.chat("Pay the flour invoice", Call("pay_invoice", {"invoice_id": FLOUR.id}))
+    assert kinds(api.chat("Pay the flour invoice", Say(reply))) == ["card", "text", "done"]
+
+
 def test_the_owner_declines_and_nothing_is_paid(api: Api) -> None:
     events = api.chat("Pay the flour invoice", Call("pay_invoice", {"invoice_id": FLOUR.id}))
     approval_id = events[0][1]["card"]["id"]
@@ -332,6 +358,11 @@ def test_a_failed_agent_says_try_again_without_details(api: Api) -> None:
     assert kinds(events) == ["error"]
     assert events[0][1]["message"] == "Ena could not answer, try again: ProcessError"
     assert "cb-secret" not in json.dumps(events)
+
+
+def test_a_reply_cut_off_by_a_late_failure_is_still_shown(api: Api) -> None:
+    events = api.chat("What's my balance?", Say("Your balance is shown."), Fail("ProcessError"))
+    assert kinds(events) == ["text", "error"]
 
 
 def test_an_empty_reply_is_an_error(api: Api) -> None:
