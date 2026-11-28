@@ -6,6 +6,8 @@ An approval request is inserted pending and decided once, in the same transactio
 its next write (the attempt to pay, or the declined receipt); its ref is kept beside it.
 A payment attempt is recorded for a ref before the bank is called, also append-only,
 so a payment whose outcome is unknown is never sent twice.
+Card sales booked from JCC are append-only too, at most one per JCC order id, so a
+repeated callback can never book a sale twice.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from ena.models import ApprovalRequest, ApprovalStatus, Receipt
+from ena.models import ApprovalRequest, ApprovalStatus, CardSale, Receipt
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS receipts (
@@ -36,6 +38,12 @@ CREATE TABLE IF NOT EXISTS attempts (
     ref TEXT PRIMARY KEY,
     at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS card_sales (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    jcc_order_id TEXT NOT NULL UNIQUE,
+    body TEXT NOT NULL
+);
 """
 
 
@@ -55,7 +63,9 @@ class Store:
     """Receipts and approval requests in one SQLite database (`:memory:` in tests)."""
 
     def __init__(self, path: Path | str) -> None:
-        self._db = sqlite3.connect(path)
+        # The API's event loop runs on its own thread (ena/api.py), not the one that opened
+        # the store; it is still one thread at a time, so sharing the connection is safe
+        self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.executescript(_SCHEMA)
 
     def close(self) -> None:
@@ -89,6 +99,27 @@ class Store:
     def has_attempt(self, ref: str) -> bool:
         row = self._db.execute("SELECT 1 FROM attempts WHERE ref = ?", (ref,)).fetchone()
         return row is not None
+
+    # Card sales: insert and read only
+
+    def add_card_sale(self, sale: CardSale) -> None:
+        """Book a card sale; fails if its id or its JCC order id is already booked."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO card_sales (id, jcc_order_id, body) VALUES (?, ?, ?)",
+                (sale.id, sale.jcc_order_id, sale.model_dump_json()),
+            )
+
+    def card_sale_for(self, jcc_order_id: str) -> CardSale | None:
+        row = self._db.execute(
+            "SELECT body FROM card_sales WHERE jcc_order_id = ?", (jcc_order_id,)
+        ).fetchone()
+        return None if row is None else CardSale.model_validate_json(row[0])
+
+    def card_sales(self) -> list[CardSale]:
+        """Every booked card sale, oldest first."""
+        rows = self._db.execute("SELECT body FROM card_sales ORDER BY seq").fetchall()
+        return [CardSale.model_validate_json(body) for (body,) in rows]
 
     # Approval requests
 
