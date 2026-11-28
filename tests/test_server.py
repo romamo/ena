@@ -399,6 +399,8 @@ def test_the_built_page_is_served_beside_the_api(tmp_path: Path) -> None:
     with TestClient(server.app) as http:
         assert http.get("/").text == "<p>Ena</p>"
         assert http.get("/health").json() == {"status": "ok"}
+        # The customer's page after a JCC payment is the API's, not the chat page's
+        assert "<h1>Thank you</h1>" in http.get("/jcc/paid").text
         assert http.post("/chat", json={"text": "What's my balance?"}).status_code == 200
     server.close()
 

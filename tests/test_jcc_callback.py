@@ -227,3 +227,22 @@ def test_order_status_down_answers_503_so_jcc_retries() -> None:
     assert response.status_code == 503
     assert "api-password" not in response.text
     assert store.card_sales() == []
+
+
+# The customer's page after paying
+
+
+@pytest.mark.parametrize("path", ["/jcc/paid", "/jcc/paid/"])
+def test_the_customer_lands_on_a_thank_you_page_that_claims_no_result(api: Api, path: str) -> None:
+    # JCC sends the browser back with its order id; the page neither reads nor echoes it
+    response = api.http.get(path, params={"orderId": MD_ORDER, "lang": "en"})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers["cache-control"] == "no-store"
+    page = response.text
+    assert "<h1>Thank you</h1>" in page
+    assert "If your card was declined, nothing was taken" in page
+    assert "href" not in page  # no way from the customer's phone into the owner's chat
+    assert MD_ORDER not in page
+    assert api.store.card_sales() == []
+    assert api.jcc.calls == 0
