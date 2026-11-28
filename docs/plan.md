@@ -56,7 +56,7 @@ One month of a bakery owner with Ena, replayed from the synthetic month. The amo
 | Idea work | Positioning, business model canvas (who pays, how much, what BoC gains), the one number | Together |
 | Customer interviews | Finding micro-businesses, the interviews, numbers and quotes | Together |
 | Demo | The demo script, the synthetic month, a backup video, who clicks on stage | Keith (2026-11-28) |
-| Submission and organisers | GitHub usernames, F1 form, sandbox sign-ups, mentors, the final repo (README, sample data, mockups, canvas, deck) | Open |
+| Submission and organisers | GitHub usernames, F1 form, sandbox sign-ups, mentors, the final repo (README, sample data, mockups, canvas, deck) | Youssef (2026-11-28) |
 
 Team: Roman, Youssef and Keith.
 
@@ -110,9 +110,9 @@ The organisers ask every team to measure one success metric. Ours: the owner's h
 
 ## Open
 
-- [ ] Send every member's GitHub username to the organisers (Roman `romamo`, Youssef `YoussefBouz`, Keith `keithmaina123`)
+- [x] Send every member's GitHub username to the organisers (Roman `romamo`, Youssef `YoussefBouz`, Keith `keithmaina123`): sent by Roman
 - [ ] Register in the bocAPI sandbox, the Jinius integration environment and the JCC sandbox; run the Postman collections
-- [ ] F1 Form of Needs, due Friday 19:00: a mentor from BoC SME lending (does the Digital Business Loan fit micro-businesses; can it be applied for through an API in the sandbox or should we emulate it), plus a Jinius mentor
+- [x] F1 Form of Needs, due Friday 19:00: a mentor from BoC SME lending (does the Digital Business Loan fit micro-businesses; can it be applied for through an API in the sandbox or should we emulate it), plus a Jinius mentor: sent by Youssef
 - [x] Ask the organisers: the jury's Q&A is separate from the 4 minutes, which include the live demo (2026-11-28)
 - [ ] About 5 customer interviews on Saturday morning: a photo studio and a bakery are lined up; find a barber and one or two more
 - [x] Agree Keith's area: Demo (2026-11-28)

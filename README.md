@@ -102,7 +102,7 @@ uv run ena-boc token
 | Pitch on stage | Youssef |
 | Presentation, idea work, customer interviews | Together |
 | Demo | Keith |
-| Submission and organisers | Open |
+| Submission and organisers | Youssef |
 
 Members: Roman, Youssef and Keith.
 
