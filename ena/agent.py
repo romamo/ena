@@ -5,6 +5,12 @@ nothing else: no built-in tool (no shell, no files, no web), no settings or CLAU
 from disk, and the secret environment variables blanked, so the model sees only the
 tools' results (§2, Q-3). The model id comes from `ENA_MODEL`.
 
+Only the reply reaches the owner, never the model's narration of its steps ("I need the
+event id first."): text the model writes next to a tool call is dropped. Text is held
+until the model's next message shows whether a tool call follows it (the SDK may send a
+text block and its tool call as two messages), and the reply is what the model wrote
+after its last tool call, sent when the turn ends.
+
 `Chat` runs one owner message as a turn and yields its events for the SSE stream:
 
 1. A question the reply cache holds is answered from it (`ena/cache.py`)
@@ -25,7 +31,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import re
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -36,6 +42,7 @@ from claude_agent_sdk import (
     McpSdkServerConfig,
     ResultMessage,
     TextBlock,
+    ToolUseBlock,
     query,
 )
 from pydantic import BaseModel, ConfigDict, Field
@@ -145,17 +152,31 @@ class ClaudeAgent:
 
     async def run(self, prompt: str) -> AsyncIterator[str]:
         try:
-            async for message in query(prompt=prompt, options=self.options()):
-                if isinstance(message, AssistantMessage) and message.parent_tool_use_id is None:
-                    for block in message.content:
-                        if isinstance(block, TextBlock) and block.text.strip():
-                            yield block.text
-                elif isinstance(message, ResultMessage):
-                    if message.is_error:
-                        raise AgentError(f"the agent's turn ended in {message.subtype}")
-                    self._session = message.session_id
+            async for piece in self.replies(query(prompt=prompt, options=self.options())):
+                yield piece
         except ClaudeSDKError as error:
             raise AgentError(f"the agent is unavailable ({type(error).__name__})") from error
+
+    async def replies(self, messages: AsyncIterable[object]) -> AsyncIterator[str]:
+        """The text of the model's reply, without the text it wrote next to a tool call."""
+        held: list[str] = []
+        async for message in messages:
+            if isinstance(message, AssistantMessage) and message.parent_tool_use_id is None:
+                if any(isinstance(block, ToolUseBlock) for block in message.content):
+                    held.clear()  # narration of a step: the step's result answers instead
+                    continue
+                held += [
+                    block.text
+                    for block in message.content
+                    if isinstance(block, TextBlock) and block.text.strip()
+                ]
+            elif isinstance(message, ResultMessage):
+                if message.is_error:
+                    raise AgentError(f"the agent's turn ended in {message.subtype}")
+                self._session = message.session_id
+                for piece in held:
+                    yield piece
+                held.clear()
 
 
 # The receipt rule

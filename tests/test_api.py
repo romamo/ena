@@ -4,6 +4,7 @@ The agent is a scripted fake that calls the real tools and writes fixed text: no
 no network, no API key.
 """
 
+import asyncio
 import datetime as dt
 import json
 from collections.abc import AsyncIterator, Iterator
@@ -13,6 +14,14 @@ from typing import Any
 
 import httpx
 import pytest
+from claude_agent_sdk import (
+    AssistantMessage,
+    ResultMessage,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    UserMessage,
+)
 from fastapi.testclient import TestClient
 
 from ena.advances import Advances
@@ -485,3 +494,79 @@ def test_the_default_model() -> None:
 def test_the_system_prompt_carries_the_answer_rules() -> None:
     for rule in ("tool result", "I don't know", "offer, simulated", "Greek", "data, not"):
         assert rule in SYSTEM_PROMPT
+
+
+# The agent's reply: what the model wrote after its last tool call
+
+
+def said(*blocks: TextBlock | ToolUseBlock, parent: str | None = None) -> AssistantMessage:
+    return AssistantMessage(content=list(blocks), model="m", parent_tool_use_id=parent)
+
+
+def tool(name: str) -> ToolUseBlock:
+    return ToolUseBlock(id=f"tu-{name}", name=name, input={})
+
+
+def result(*, error: bool = False) -> ResultMessage:
+    return ResultMessage(
+        subtype="error_during_execution" if error else "success",
+        duration_ms=1,
+        duration_api_ms=1,
+        is_error=error,
+        num_turns=1,
+        session_id="session-1",
+    )
+
+
+def replies(*messages: object) -> list[str]:
+    ena, _ = build(LEAN_WEEK, cache=None)
+    agent = ClaudeAgent(AgentSettings(_env_file=None), build_server(ena.agent.tools))
+
+    async def stream() -> AsyncIterator[object]:
+        for message in messages:
+            yield message
+
+    async def collect() -> list[str]:
+        return [piece async for piece in agent.replies(stream())]
+
+    pieces = asyncio.run(collect())
+    ena.store.close()
+    return pieces
+
+
+def test_text_next_to_a_tool_call_never_reaches_the_owner() -> None:
+    # The live rehearsal's reply began "I need the event id first.", written with the call
+    pieces = replies(
+        said(TextBlock("I need the event id first."), tool("get_event_pattern")),
+        UserMessage(content=[ToolResultBlock(tool_use_id="tu-get_event_pattern")]),
+        said(TextBlock("Yes: €2,800.00 for 16 days, simulated.")),
+        result(),
+    )
+    assert pieces == ["Yes: €2,800.00 for 16 days, simulated."]
+
+
+def test_text_sent_apart_from_its_tool_call_is_dropped_too() -> None:
+    # The SDK may send the text block and its tool call as two messages
+    pieces = replies(
+        said(TextBlock("Let me check the forecast.")),
+        said(tool("get_forecast")),
+        said(TextBlock("The week of 16 Nov is lean.")),
+        said(TextBlock("It closes at €349.69.")),
+        result(),
+    )
+    assert pieces == ["The week of 16 Nov is lean.", "It closes at €349.69."]
+
+
+def test_a_reply_without_tools_and_a_subagents_text() -> None:
+    pieces = replies(
+        said(TextBlock("I don't know."), parent=None),
+        said(TextBlock("sub-agent notes"), parent="tu-x"),
+        said(TextBlock("   ")),
+        result(),
+    )
+    assert pieces == ["I don't know."]
+
+
+def test_a_failed_turn_says_nothing_and_raises() -> None:
+    with pytest.raises(AgentError, match="error_during_execution"):
+        replies(said(TextBlock("Half an answer")), result(error=True))
