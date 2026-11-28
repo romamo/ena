@@ -9,12 +9,34 @@ Every model is frozen and refuses unknown fields.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from enum import StrEnum
 from typing import Annotated, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 # Field types
+
+
+def _iso_date(value: object) -> object:
+    """Let only a `date` or a `YYYY-MM-DD` string through: no timestamps, no datetimes."""
+    if isinstance(value, dt.datetime) or not isinstance(value, (dt.date, str)):
+        raise ValueError(f"a date must be a date or a YYYY-MM-DD string, got {value!r}")
+    if isinstance(value, str) and not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+        raise ValueError(f"not a YYYY-MM-DD date: {value!r}")
+    return value
+
+
+IsoDate = Annotated[dt.date, BeforeValidator(_iso_date)]
+"""A calendar date, ISO `YYYY-MM-DD` in JSON."""
 
 Id = Annotated[str, StringConstraints(min_length=1)]
 """An entity's id: any non-empty string."""
@@ -95,7 +117,7 @@ class Account(_Entity):
 class Transaction(_Entity):
     id: Id
     account_id: Id
-    date: dt.date
+    date: IsoDate
     amount_cents: Cents
     """Positive for money in, negative for money out."""
     counterparty: str
@@ -107,8 +129,8 @@ class SupplierInvoice(_Entity):
     supplier_name: str
     supplier_iban: Iban
     amount_cents: NonNegativeCents
-    issue_date: dt.date
-    due_date: dt.date
+    issue_date: IsoDate
+    due_date: IsoDate
     status: InvoiceStatus
     jinius_id: Id
 
@@ -116,7 +138,7 @@ class SupplierInvoice(_Entity):
 class CardSale(_Entity):
     id: Id
     amount_cents: NonNegativeCents
-    date: dt.date
+    date: IsoDate
     jcc_order_id: Id
     status: str
     """JCC's status, as its callback sends it (values unknown until the JCC task)."""
@@ -127,11 +149,11 @@ class Loan(_Entity):
 
     id: Id
     instalment_cents: NonNegativeCents
-    next_due_date: dt.date
+    next_due_date: IsoDate
 
 
 class ForecastWeek(_Entity):
-    week_start: dt.date
+    week_start: IsoDate
     opening_cents: Cents
     in_cents: NonNegativeCents
     out_cents: NonNegativeCents
@@ -149,7 +171,7 @@ class ForecastWeek(_Entity):
 
 class Forecast(_Entity):
     weeks: tuple[ForecastWeek, ...]
-    lean_week: dt.date | None
+    lean_week: IsoDate | None
     """The `week_start` of the first lean week, or None when no week is lean."""
     reason: str
 
@@ -164,7 +186,7 @@ class Forecast(_Entity):
 class Event(_Entity):
     id: Id
     customer: str
-    event_date: dt.date
+    event_date: IsoDate
     price_cents: NonNegativeCents
     deposit_cents: NonNegativeCents
     costs_cents: NonNegativeCents
@@ -177,7 +199,7 @@ class Offer(_Entity):
     kind: OfferKind
     amount_cents: NonNegativeCents
     term_days: Annotated[int, Field(strict=True, gt=0)]
-    basis: dict[str, Annotated[int, Field(strict=True)]]
+    basis: frozendict[str, Annotated[int, Field(strict=True)]]
     """The numbers the rule used, by name (cents, days, counts)."""
     simulated: Flag
 

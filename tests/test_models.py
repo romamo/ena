@@ -164,6 +164,8 @@ def _invoice_json(**changes: object) -> dict[str, object]:
         {"status": "lost"},
         {"due_date": "15/11/2026"},
         {"due_date": "2026-13-01"},
+        {"due_date": 0},
+        {"due_date": "2026-11-15T00:00:00"},
         {"supplier_iban": "not an iban"},
         {"id": ""},
         {"note": "an extra field"},
@@ -192,6 +194,12 @@ def test_models_are_frozen() -> None:
         LOAN.instalment_cents = 0  # type: ignore[misc]
     with pytest.raises(ValidationError):
         RECEIPT.result = "failed"  # type: ignore[misc]
+
+
+def test_offer_basis_is_immutable() -> None:
+    with pytest.raises(TypeError):
+        OFFER.basis["gap_cents"] = 1  # type: ignore[index]
+    assert hash(OFFER) == hash(OFFER.model_copy())
 
 
 def test_flags_are_strict_booleans() -> None:
