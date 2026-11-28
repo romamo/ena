@@ -29,10 +29,13 @@ COMPLETED = "CPLT"
 """The bank's status for a completed payment."""
 
 SIMULATED_NOTE = " (simulated: no money moved)"
+"""Ends the explanation of a payment a simulated bank completed."""
 
 REPAY_PREFIX = "repay-"
-"""Starts the ref of a simulated advance's repayment: never paid with real money."""
-"""Ends the explanation of a payment a simulated bank completed."""
+"""Starts the ref of a simulated advance's repayment: never paid with real money.
+
+The guard reads the ref, not the offer: every event advance is simulated (N-1, lending
+itself is a non-goal). Real lending would need the guard to read the offer instead."""
 
 
 class PaymentResult(StrEnum):
