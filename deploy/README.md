@@ -31,11 +31,12 @@ A person approves the release by typing its id at a real terminal (a `!` command
 uv run cloudfall release approve ena --release <release>
 ```
 
-Write the key to a private env file under `tmp/` (never committed), then deploy behind the health check, which rolls back on its own when the check fails:
+Write the server's secrets to a private env file under `tmp/` (never committed): the Anthropic key, and the Jinius sandbox buyer client so the dashboard's Jinius tab reads invoices live (without it the tab answers 503). Deploy behind the health check, which rolls back on its own when the check fails, then delete the file:
 
 ```bash
-umask 077 && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > tmp/env/ena.env
+umask 077 && grep -E '^(ANTHROPIC_API_KEY|JINIUS_CLIENT_ID|JINIUS_CLIENT_SECRET)=' ../.env > tmp/env/ena.env
 uv run cloudfall deploy ena --release <release> --env-file tmp/env/ena.env --yes
+rm tmp/env/ena.env
 ```
 
 `cloudfall rollback ena` switches back to an earlier release kept on the server.
