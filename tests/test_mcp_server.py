@@ -207,7 +207,9 @@ def test_list_receipts_is_newest_first_and_bounded() -> None:
     s.tools.start_turn()
     receipts = s.tools.list_receipts(5).receipts
     assert [r.ref for r in receipts] == [FLOUR.id, DAIRY.id]
-    assert s.tools.finish_turn().receipts == list(receipts)
+    turn = s.tools.finish_turn()
+    assert turn.receipts == []  # read, not written this turn
+    assert turn.read == list(receipts)
     assert {i.status for i in s.tools.list_unpaid_invoices().invoices} == {InvoiceStatus.DECLINED}
     for bad in (0, 51):
         with pytest.raises(ToolError, match="limit"):

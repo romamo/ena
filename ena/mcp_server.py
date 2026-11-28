@@ -18,9 +18,9 @@ replay `Handler` that moves that day forward as the month plays (`ena/replay.py`
 
 `EnaTools` holds the tools as plain methods, so they are tested without an agent, and
 records what each chat turn produced: the cards the owner sees (approvals, receipts, the
-forecast, offers) and every receipt a tool returned, which is what lets a reply say
-"paid" (`ena/agent.py`). `build_server` puts them on an in-process MCP server for the
-Claude Agent SDK.
+forecast, offers) and the receipts the gate returned for a payment asked this turn, which
+alone let a reply say "paid" (`ena/agent.py`); a receipt `list_receipts` only read does
+not. `build_server` puts them on an in-process MCP server for the Claude Agent SDK.
 
 Not here yet: `get_event_pattern` and `propose_event_advance` (no event rule exists) and
 `create_pay_link` (the JCC connector has no register call).
@@ -333,7 +333,11 @@ class Turn:
     cards: list[Card] = field(default_factory=list)
     """For the owner: approval requests, receipts, the forecast, offers."""
     receipts: list[Receipt] = field(default_factory=list)
-    """Every receipt a tool returned this turn, read from the store or written by the gate."""
+    """The receipts the gate returned for a payment asked this turn (`pay_invoice`), which
+    alone confirm a "paid" claim; receipts a tool only read (`list_receipts`) are not here."""
+    read: list[Receipt] = field(default_factory=list)
+    """The receipts `list_receipts` read this turn: a paid one backs only a sentence that
+    cites its id, a payment made earlier (`ena/agent.py`)."""
 
 
 class EnaTools:
@@ -428,10 +432,11 @@ class EnaTools:
         )
 
     def list_receipts(self, limit: int) -> ReceiptsResult:
+        """The latest receipts, read only: they are not this turn's (`Turn.receipts`)."""
         if type(limit) is not int or not 1 <= limit <= MAX_RECEIPTS:
             raise ToolError(f"limit must be an integer from 1 to {MAX_RECEIPTS}, got {limit!r}")
         receipts = tuple(reversed(self._store.receipts()[-limit:]))
-        self._turn.receipts.extend(receipts)
+        self._turn.read.extend(receipts)
         return ReceiptsResult(receipts=receipts)
 
     # Money and offers
