@@ -66,6 +66,11 @@ FIGURE = re.compile(r"-?€(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?")
 
 GREEK = re.compile(r"[Ά-ώ]")
 """A Greek letter, with or without its accent (U+0386 to U+03CE)."""
+NARRATION = re.compile(
+    r"^\s*(?:I need\b|Let me\b|I'll\b|I will\b|I'm going to\b|First,? I\b)", re.IGNORECASE
+)
+"""A reply that opens by narrating the model's steps ("I need the event id first.")."""
+
 DONT_KNOW = re.compile(
     r"\bI don't know\b|\bI do not know\b|δεν (?:το )?(?:ξέρω|γνωρίζω)",
     re.IGNORECASE,
@@ -278,6 +283,8 @@ def reply_problems(question: Question, reply: str, allowed: set[int]) -> list[st
     """What is wrong with a reply: a missing figure, a figure no tool gave, no "I don't know"."""
     said = figures_in(reply)
     problems = []
+    if NARRATION.search(reply):
+        problems.append("opens with narration")
     if question.dont_know:
         if not DONT_KNOW.search(reply):
             problems.append("no 'I don't know'")
@@ -332,6 +339,8 @@ def test_the_reply_check_catches_a_wrong_or_invented_figure() -> None:
     assert reply_problems(lean, "€349.69, €400.00 and about €350", allowed) == [
         "not from a tool ['€350']"
     ]
+    narrated = "I need the event id first.\n\nThe week closes at €349.69, below the €400.00."
+    assert reply_problems(lean, narrated, allowed) == ["opens with narration"]
     vat = BY_ID["unknown-vat"]
     assert reply_problems(vat, "Δεν το ξέρω.", set()) == []
     assert reply_problems(vat, "About €900.", set()) == [
