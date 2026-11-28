@@ -26,6 +26,8 @@ import httpx
 from pydantic import ValidationError
 
 from ena.connectors.boc import (
+    SAMPLE_CREDITOR,
+    SAMPLE_CREDITOR_BANK,
     AccountId,
     AuthCode,
     BocClient,
@@ -40,10 +42,6 @@ from ena.connectors.boc import (
 
 STATE_FILE = Path("tmp/boc-state.json")
 FIXTURES = Path("fixtures/boc")
-
-# BoC's documented sample payee (a SWIFT transfer that the sandbox accepts)
-SAMPLE_CREDITOR = "48193222324233"
-SAMPLE_CREDITOR_BANK = "CITIUS33"
 
 
 def main(argv: list[str] | None = None) -> None:

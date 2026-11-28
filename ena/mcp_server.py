@@ -34,6 +34,12 @@ the forecast has no history yet. Its spare cash is what the forecast keeps above
 instalment plus the buffer) up to the week the event's costs fall due: the lowest closing
 from this week to that one, less the threshold, and never below zero.
 
+With a bank that asks the owner to confirm each payment in its own screen (bocAPI),
+`pay_invoice` returns "awaiting_bank" and the `BankConsent` card: the gate decided to pay,
+nothing is paid until the owner confirms. `get_bank_account` reads the live Bank of Cyprus
+sandbox account (a sample customer's) when the server has one; its figures are the
+sandbox's, never the synthetic month's, and its card keeps the reply out of the cache.
+
 Not here yet: `create_pay_link` (the JCC connector has no register call).
 """
 
@@ -43,7 +49,7 @@ import datetime as dt
 import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from claude_agent_sdk import McpSdkServerConfig, SdkMcpTool, ToolAnnotations, create_sdk_mcp_server
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
@@ -53,6 +59,8 @@ from ena.models import (
     Actor,
     ApprovalRequest,
     ApprovalStatus,
+    BankAccount,
+    BankConsent,
     Card,
     CardSale,
     Event,
@@ -97,6 +105,12 @@ class ToolError(ValueError):
 
 Today = Callable[[], dt.date]
 """Returns the business's current day."""
+
+
+class BankReader(Protocol):
+    """Reads the live bank account (the bocAPI sandbox's)."""
+
+    def account(self) -> BankAccount: ...
 
 
 # Ledger: the month as of today
@@ -262,9 +276,15 @@ class Ledger:
             }.get(PaymentResult(receipt.result), invoice.status)
         elif self._store.pending_approval_for(invoice.id) is not None:
             status = InvoiceStatus.AWAITING_APPROVAL
+        elif self._waits_for_bank(invoice.id):
+            status = InvoiceStatus.AWAITING_BANK
         else:
             status = invoice.status
         return invoice.model_copy(update={"status": status})
+
+    def _waits_for_bank(self, ref: str) -> bool:
+        waiting = self._store.open_consent()
+        return waiting is not None and waiting.consent.ref == ref
 
     def _loan_from(self, start: dt.date) -> Loan:
         loan = self._month.loan
@@ -365,7 +385,7 @@ class ReceiptsResult(_Result):
     """Newest first."""
 
 
-PayStatus = Literal["paid", "failed", "declined", "awaiting_approval"]
+PayStatus = Literal["paid", "failed", "declined", "unknown", "awaiting_approval", "awaiting_bank"]
 
 
 class PayResult(_Result):
@@ -374,6 +394,15 @@ class PayResult(_Result):
     amount: str
     receipt: Receipt | None
     approval: ApprovalRequest | None
+    consent: BankConsent | None = None
+    note: str
+
+
+class BankAccountResult(_Result):
+    source: Literal["Bank of Cyprus sandbox, live"]
+    account: BankAccount
+    available: str | None
+    current: str | None
     note: str
 
 
@@ -423,11 +452,19 @@ class Turn:
 
 
 class EnaTools:
-    def __init__(self, ledger: Ledger, store: Store, gate: Gate, clock: Clock) -> None:
+    def __init__(
+        self,
+        ledger: Ledger,
+        store: Store,
+        gate: Gate,
+        clock: Clock,
+        bank: BankReader | None = None,
+    ) -> None:
         self._ledger = ledger
         self._store = store
         self._gate = gate
         self._clock = clock
+        self._bank = bank
         self._turn = Turn()
 
     def start_turn(self) -> None:
@@ -522,6 +559,21 @@ class EnaTools:
             threshold=euros(cash.threshold_cents),
         )
 
+    def get_bank_account(self) -> BankAccountResult:
+        """The live Bank of Cyprus sandbox account, shown as its own card."""
+        if self._bank is None:
+            raise ToolError("no bank account is connected: this demo runs on the stand-in bank")
+        account = self._bank.account()
+        self._turn.cards.append(account)
+        return BankAccountResult(
+            source="Bank of Cyprus sandbox, live",
+            account=account,
+            available=None if account.available_cents is None else euros(account.available_cents),
+            current=None if account.current_cents is None else euros(account.current_cents),
+            note="A sample customer's sandbox account, not the synthetic business's: never add"
+            " its figures to the business's balance or forecast",
+        )
+
     def list_receipts(self, limit: int) -> ReceiptsResult:
         """The latest receipts, read only: they are not this turn's (`Turn.receipts`)."""
         if type(limit) is not int or not 1 <= limit <= MAX_RECEIPTS:
@@ -551,11 +603,23 @@ class EnaTools:
                 approval=outcome,
                 note=f"Not paid: {outcome.reason}; it waits for the owner's approval",
             )
+        if isinstance(outcome, BankConsent):
+            return PayResult(
+                invoice_id=invoice.id,
+                status="awaiting_bank",
+                amount=amount,
+                receipt=None,
+                approval=None,
+                consent=outcome,
+                note="Not paid yet: the bank holds it until the owner confirms it in the Bank"
+                " of Cyprus screen the card opens",
+            )
         self._turn.receipts.append(outcome)
         statuses: dict[PaymentResult, PayStatus] = {
             PaymentResult.PAID: "paid",
             PaymentResult.FAILED: "failed",
             PaymentResult.DECLINED: "declined",
+            PaymentResult.UNKNOWN: "unknown",
         }
         status = statuses[PaymentResult(outcome.result)]
         return PayResult(
@@ -806,6 +870,14 @@ TOOLS: tuple[ToolSpec, ...] = (
         lambda t, _: t.get_forecast(),
     ),
     ToolSpec(
+        "get_bank_account",
+        "The live Bank of Cyprus sandbox account (a sample customer's, not the business's):"
+        " its balance and latest statement lines.",
+        _NO_ARGS,
+        _READ,
+        lambda t, _: t.get_bank_account(),
+    ),
+    ToolSpec(
         "list_receipts",
         "The latest receipts of what Ena and the owner did, newest first.",
         {
@@ -821,7 +893,8 @@ TOOLS: tuple[ToolSpec, ...] = (
         "pay_invoice",
         "Ask the gate to pay a supplier invoice by its id. The gate pays within the owner's"
         " limit and otherwise creates an approval request for the owner; the amount and"
-        " the payee come from the invoice.",
+        " the payee come from the invoice. With the Bank of Cyprus sandbox, a payment the"
+        " gate makes waits for the owner's confirmation in the bank (awaiting_bank).",
         {
             "type": "object",
             "properties": {"invoice_id": {"type": "string", "minLength": 1}},

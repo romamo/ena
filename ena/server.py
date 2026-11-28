@@ -2,6 +2,7 @@
 
     uv run ena-serve                       # http://127.0.0.1:8000, the store in tmp/ena.db
     uv run ena-serve --memory --day 2026-11-04 --port 8001
+    uv run ena-serve --bank boc            # pay through the bocAPI sandbox
 
 The app the demo runs, built from `.env` as each module reads it:
 
@@ -9,8 +10,11 @@ The app the demo runs, built from `.env` as each module reads it:
   memory (`--memory`)
 - The synthetic month (`ena/seed.py`), read as of `--day`: by default 16 November, the
   Monday of the lean week, when both invoices have arrived and the forecast flags the week
-- The gate, with the month's business and its limit. Its bank is `StandInBank`, which
-  completes every payment: the gate is not wired to bocAPI yet, so a payment is simulated
+- The gate, with the month's business and its limit. Its bank is `StandInBank` by
+  default, which completes every payment, so a payment is simulated. With `--bank boc`
+  it is `BocBank` (`BOC_*`): each payment the gate makes is initiated in the bocAPI
+  sandbox and executed once the owner confirms it in BoC's screen, and the agent can read
+  the sandbox account's balance and statement (`get_bank_account`)
 - The chat agent (`ena/agent.py`, `ENA_*`) and the reply cache, in memory or in `--cache`
 - The JCC client (`JCC_*`) for `POST /jcc/callback`
 
@@ -45,10 +49,12 @@ from ena.advances import Advances
 from ena.agent import AgentError, AgentRunner, AgentSettings, Chat, ClaudeAgent
 from ena.api import create_app
 from ena.cache import ReplyCache
+from ena.connectors.boc import BocClient, BocSettings
+from ena.connectors.boc_bank import BocBank, check_redirect
 from ena.connectors.jcc import JccClient, JccSettings, JccUnavailable
 from ena.dashboard import Dashboard
-from ena.gate import COMPLETED, Gate, PaymentBank
-from ena.mcp_server import EnaTools, Ledger, ReplayDay, build_server
+from ena.gate import COMPLETED, ConsentBank, Gate, PaymentBank
+from ena.mcp_server import BankReader, EnaTools, Ledger, ReplayDay, build_server
 from ena.seed import FIRST_DAY, LAST_DAY, LEAN_WEEK, SEED, synthetic_month
 from ena.store import Store
 
@@ -88,6 +94,8 @@ class ServeSettings(BaseModel):
     """None when JCC is not configured: the callback route refuses every call."""
     model_credential: bool
     """Whether the environment holds a credential for the model."""
+    boc: BocSettings | None = None
+    """None for the stand-in bank; the bocAPI sandbox's settings for `--bank boc`."""
 
     @model_validator(mode="after")
     def _day_in_month(self) -> Self:
@@ -109,6 +117,26 @@ def load_jcc(env_file: Path | None) -> JccSettings | None:
     if not _JccPresence(_env_file=env_file).callback_secret.get_secret_value():
         return None
     return JccSettings(_env_file=env_file)
+
+
+def load_boc(env_file: Path | None) -> BocSettings:
+    """The bocAPI settings `--bank boc` needs; refuses a set that can't complete a payment."""
+    settings = BocSettings(_env_file=env_file)
+    missing = [
+        f"BOC_{name.upper()}"
+        for name in ("subscription_id", "account_id")
+        if getattr(settings, name) is None
+    ]
+    if missing:
+        raise SystemExit(
+            f"ena-serve --bank boc: set {' and '.join(missing)} in .env"
+            " (uv run ena-boc subscribe, then activate)"
+        )
+    try:
+        check_redirect(settings)
+    except ValueError as error:
+        raise SystemExit(f"ena-serve --bank boc: {error}") from error
+    return settings
 
 
 def has_model_credential(environ: Mapping[str, str]) -> bool:
@@ -159,9 +187,12 @@ class Server:
     app: FastAPI
     store: Store
     jcc_http: httpx.AsyncClient
+    boc_http: httpx.Client | None = None
 
     def close(self) -> None:
         asyncio.run(self.jcc_http.aclose())
+        if self.boc_http is not None:
+            self.boc_http.close()
         self.store.close()
 
 
@@ -169,20 +200,30 @@ def build(
     settings: ServeSettings,
     *,
     runner: RunnerFactory | None = None,
-    bank: PaymentBank | None = None,
+    bank: PaymentBank | ConsentBank | None = None,
     jcc_transport: httpx.AsyncBaseTransport | None = None,
+    boc_transport: httpx.BaseTransport | None = None,
 ) -> Server:
-    """The app the demo runs; the runner, the bank and JCC's transport are injectable."""
+    """The app the demo runs; the runner, the bank and the transports are injectable."""
     month = synthetic_month()
     if settings.store is not None:
         settings.store.parent.mkdir(parents=True, exist_ok=True)
     store = Store(":memory:" if settings.store is None else settings.store)
-    if bank is None:
+    boc_http: httpx.Client | None = None
+    reader: BankReader | None = None
+    if settings.boc is not None:
+        if bank is not None:
+            raise ValueError("pass a bank or the bocAPI settings, not both")
+        boc_http = httpx.Client(transport=boc_transport, timeout=30.0)
+        boc_bank = BocBank.from_settings(BocClient(settings.boc, boc_http), _now)
+        bank, reader = boc_bank, boc_bank
+        log.info("payments go through the bocAPI sandbox, from account %s", settings.boc.account_id)
+    elif bank is None:
         log.warning(SIMULATED_PAYMENTS)
     gate = Gate(month.business, store, StandInBank() if bank is None else bank, _now)
     today = ReplayDay(settings.day)
     ledger = Ledger(month, store, today)
-    tools = EnaTools(ledger, store, gate, _now)
+    tools = EnaTools(ledger, store, gate, _now, reader)
     agent = (claude_runner(settings) if runner is None else runner)(tools)
     chat = Chat(tools, agent, today, ReplyCache(SEED, settings.cache))
 
@@ -211,7 +252,7 @@ def build(
     )
     if settings.jcc is None:
         _refuse_callbacks(app)
-    return Server(app, store, http)
+    return Server(app, store, http, boc_http)
 
 
 def _refuse_callbacks(app: FastAPI) -> None:
@@ -241,6 +282,12 @@ def parser() -> argparse.ArgumentParser:
     where.add_argument("--store", type=Path, default=DEFAULT_STORE, help=f"default {DEFAULT_STORE}")
     where.add_argument("--memory", action="store_true", help="keep the store in memory")
     p.add_argument("--cache", type=Path, default=None, help="the reply cache's JSON file")
+    p.add_argument(
+        "--bank",
+        choices=("stand-in", "boc"),
+        default="stand-in",
+        help="stand-in: simulated payments (default); boc: the bocAPI sandbox (BOC_* in .env)",
+    )
     return p
 
 
@@ -256,6 +303,7 @@ def load_settings(
             agent=AgentSettings(_env_file=env_file),
             jcc=load_jcc(env_file),
             model_credential=has_model_credential(environ),
+            boc=load_boc(env_file) if args.bank == "boc" else None,
         )
     except ValidationError as error:
         problems = "; ".join(

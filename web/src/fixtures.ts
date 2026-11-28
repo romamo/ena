@@ -28,6 +28,7 @@ export const RECEIPT: CardEvent = {
     result: "paid",
     explanation: "Approved by the owner; paid €1,240.00, bank status CPLT (simulated: no money moved)",
     simulated: true,
+    sandbox: false,
   },
 };
 
@@ -83,6 +84,7 @@ export const ACCEPTED: CardEvent = {
     result: "accepted",
     explanation: "Accepted by the owner. Simulated: there is no lending API, no money moved",
     simulated: false,
+    sandbox: false,
   },
 };
 
@@ -99,6 +101,7 @@ export const DECLINED: CardEvent = {
     result: "declined",
     explanation: "Declined by the owner; nothing paid",
     simulated: false,
+    sandbox: false,
   },
 };
 
@@ -171,3 +174,48 @@ export function streaming(body: string, size = 7): Response {
   });
   return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
 }
+
+export const CONSENT: CardEvent = {
+  kind: "card",
+  card_kind: "consent",
+  card: {
+    id: "consent-syn-inv-0002",
+    action: "Pay Mesaoria Mills (synthetic) invoice syn-inv-0002",
+    amount_cents: 124000,
+    ref: "syn-inv-0002",
+    actor: "owner",
+    consent_url: "https://sandbox-apis.bankofcyprus.com/df-boc-org-sb/sb/psd2/oauth2/authorize?paymentid=pay-1",
+    created_at: "2026-11-16T09:05:00Z",
+  },
+};
+
+export const SANDBOX_RECEIPT: CardEvent = {
+  kind: "card",
+  card_kind: "receipt",
+  card: {
+    id: "receipt-syn-inv-0002",
+    at: "2026-11-16T09:06:00Z",
+    actor: "owner",
+    action: "Pay Mesaoria Mills (synthetic) invoice syn-inv-0002",
+    amount_cents: 124000,
+    ref: "syn-inv-0002",
+    result: "paid",
+    explanation: "Approved by the owner; confirmed in the bank, paid €1,240.00, bank status CPLT",
+    simulated: false,
+    sandbox: true,
+  },
+};
+
+export const ACCOUNT: CardEvent = {
+  kind: "card",
+  card_kind: "account",
+  card: {
+    account_id: "351012345671",
+    iban: "CY11002003510000000012345671",
+    currency: "EUR",
+    available_cents: 825050,
+    current_cents: 830000,
+    read_at: "2026-11-28T09:00:00Z",
+    lines: [{ id: "t-1", date: "2026-11-25", amount_cents: 12025, direction: "in", description: "Deposit" }],
+  },
+};

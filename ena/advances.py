@@ -39,6 +39,7 @@ from ena.models import (
     Actor,
     AdvanceStatus,
     ApprovalRequest,
+    BankConsent,
     Event,
     OfferKind,
     Receipt,
@@ -114,7 +115,7 @@ class Advances:
         if isinstance(event, TransactionPosted):
             self.repay_from(event.transaction)
 
-    def repay_from(self, line: Transaction) -> Receipt | ApprovalRequest | None:
+    def repay_from(self, line: Transaction) -> Receipt | ApprovalRequest | BankConsent | None:
         """Repay the accepted advance the line is the final payment of, else None."""
         for event in self._events.values():
             if not _is_final_payment(line, event):

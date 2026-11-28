@@ -181,7 +181,9 @@ def _paid_by(gate: Gate, path: str) -> Receipt:
         receipt = gate.request_payment("pay_invoice", 12_000, "inv-1")
         assert isinstance(receipt, Receipt)
         return receipt
-    return gate.approve(_pending(gate).id)
+    receipt = gate.approve(_pending(gate).id)
+    assert isinstance(receipt, Receipt)
+    return receipt
 
 
 @pytest.mark.parametrize("path", ["auto", "approve"])
@@ -321,6 +323,7 @@ def test_approve_pays_once_with_one_receipt_by_the_owner(
 
     receipt = gate.approve(request.id)
 
+    assert isinstance(receipt, Receipt)
     assert receipt.actor is Actor.OWNER
     assert receipt.result == "paid"
     assert (receipt.id, receipt.at, receipt.amount_cents, receipt.ref) == (
@@ -356,6 +359,7 @@ def test_approve_with_a_failed_payment_writes_one_failed_receipt(
 
     receipt = gate.approve(_pending(gate).id)
 
+    assert isinstance(receipt, Receipt)
     assert (receipt.actor, receipt.result) == (Actor.OWNER, "failed")
     assert store.receipts() == [receipt]
     assert len(bank.calls) == 1
@@ -507,6 +511,10 @@ def test_the_store_has_no_api_to_change_or_delete_a_receipt_or_an_attempt() -> N
         "advance",
         "accepted_advance_for",
         "record_advance_decision",
+        "add_consent",
+        "consent",
+        "open_consent",
+        "close_consent",
     }
 
 

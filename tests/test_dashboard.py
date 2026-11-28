@@ -16,7 +16,7 @@ from ena.connectors.jcc import JccClient, JccSettings
 from ena.dashboard import Dashboard
 from ena.gate import Gate
 from ena.mcp_server import EnaTools, Ledger, ReplayDay
-from ena.models import ApprovalRequest, Receipt
+from ena.models import ApprovalRequest, BankConsent, Receipt
 from ena.rules.loan import loan_offer
 from ena.rules.reserve import reserve_offer
 from ena.seed import LEAN_WEEK, synthetic_month
@@ -46,7 +46,7 @@ class Board:
     tools: EnaTools
     bank: FakeBank
 
-    def pay(self, invoice_id: str) -> Receipt | ApprovalRequest:
+    def pay(self, invoice_id: str) -> Receipt | ApprovalRequest | BankConsent:
         invoice = self.ledger.invoice(invoice_id)
         return self.gate.request_payment(f"Pay {invoice.id}", invoice.amount_cents, invoice.id)
 

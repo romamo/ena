@@ -26,6 +26,38 @@ export type ReceiptCard = {
   explanation: string;
   /** A payment the stand-in bank completed: no money moved (#69). */
   simulated: boolean;
+  /** A payment the Bank of Cyprus sandbox executed (test money, CPLT). */
+  sandbox: boolean;
+};
+
+/** A payment the bank holds until the owner confirms it in the bank's own screen. */
+export type ConsentCard = {
+  id: string;
+  action: string;
+  amount_cents: number;
+  ref: string;
+  actor: "ena" | "owner";
+  consent_url: string;
+  created_at: IsoDateTime;
+};
+
+export type BankLine = {
+  id: string;
+  date: IsoDate;
+  amount_cents: number;
+  direction: "in" | "out" | null;
+  description: string;
+};
+
+/** The Bank of Cyprus sandbox account, read live: a sample customer's, not the bakery's. */
+export type AccountCard = {
+  account_id: string;
+  iban: string | null;
+  currency: string;
+  available_cents: number | null;
+  current_cents: number | null;
+  read_at: IsoDateTime;
+  lines: BankLine[];
 };
 
 export type ForecastWeek = {
@@ -53,6 +85,8 @@ export type OfferCard = {
 
 export type CardEvent =
   | { kind: "card"; card_kind: "approval"; card: ApprovalCard }
+  | { kind: "card"; card_kind: "consent"; card: ConsentCard }
+  | { kind: "card"; card_kind: "account"; card: AccountCard }
   | { kind: "card"; card_kind: "receipt"; card: ReceiptCard }
   | { kind: "card"; card_kind: "forecast"; card: ForecastCard }
   | { kind: "card"; card_kind: "offer"; card: OfferCard };
@@ -64,7 +98,7 @@ export type ChatEvent =
   | { kind: "error"; message: string };
 
 const EVENT_KINDS = new Set(["text", "card", "done", "error"]);
-const CARD_KINDS = new Set(["approval", "receipt", "forecast", "offer"]);
+const CARD_KINDS = new Set(["approval", "consent", "receipt", "forecast", "offer", "account"]);
 
 export class ApiError extends Error {}
 
@@ -246,8 +280,37 @@ export async function takeOffer(
   return tap(`/offers/${encodeURIComponent(offerId)}/${choice}`, choice, fetcher);
 }
 
+/** Whether payments go through the Bank of Cyprus sandbox (true) or the stand-in (false). */
+export async function bankIsLive(fetcher: typeof fetch = fetch): Promise<boolean> {
+  const response = await fetcher("/bank");
+  const body: unknown = await response.json();
+  if (!response.ok || !isRecord(body) || typeof body.live !== "boolean") {
+    throw new ApiError(`the bank mode answered ${response.status}`);
+  }
+  return body.live;
+}
+
+/** A bank consent: the consent card while it waits, the receipt card once settled. */
+export async function consentState(
+  consentId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<CardEvent> {
+  return card(await fetcher(`/consents/${encodeURIComponent(consentId)}`), "check");
+}
+
+/** The owner stops waiting for the bank's confirmation; answers with the failed receipt. */
+export async function cancelConsent(
+  consentId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<CardEvent> {
+  return tap(`/consents/${encodeURIComponent(consentId)}/cancel`, "cancel", fetcher);
+}
+
 async function tap(path: string, choice: string, fetcher: typeof fetch): Promise<CardEvent> {
-  const response = await fetcher(path, { method: "POST" });
+  return card(await fetcher(path, { method: "POST" }), choice);
+}
+
+async function card(response: Response, choice: string): Promise<CardEvent> {
   const body: unknown = await response.json();
   if (!response.ok) {
     const detail = isRecord(body) && typeof body.detail === "string" ? body.detail : "";

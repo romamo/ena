@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError, sendChat, type CardEvent, type ChatEvent } from "./api";
+import { ApiError, bankIsLive, sendChat, type CardEvent, type ChatEvent } from "./api";
 import { Card, FetchContext, OpenBoard, type BoardTab } from "./cards";
 import { Dashboard } from "./Dashboard";
 import { rich } from "./rich";
@@ -14,6 +14,9 @@ export const SUGGESTIONS = [
   "What did you pay this month?",
   "What's my balance?",
 ];
+
+/** The chip the page adds when payments go through the Bank of Cyprus sandbox. */
+export const LIVE_SUGGESTION = "Show my Bank of Cyprus sandbox account";
 
 type Part = { kind: "text"; text: string } | { kind: "card"; event: CardEvent };
 
@@ -51,8 +54,14 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<"chat" | "dashboard">("chat");
   const [tab, setTab] = useState<BoardTab>("overview");
+  const [live, setLive] = useState(false);
   const nextId = useRef(0);
   const end = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Until the API says the bank is live, the page labels payments simulated
+    bankIsLive(fetcher).then(setLive, () => setLive(false));
+  }, [fetcher]);
 
   useEffect(() => {
     end.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
@@ -126,10 +135,17 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
             </button>
           </div>
         </header>
-        <p className="banner" role="note">
-          Synthetic demo: the bakery, its bank data and invoices are made up, and payments are
-          simulated. No money moves.
-        </p>
+        {live ? (
+          <p className="banner" role="note">
+            Synthetic demo on the Bank of Cyprus sandbox: the bakery and its invoices are made up;
+            payments go through the BoC sandbox with test money, and you confirm each one there.
+          </p>
+        ) : (
+          <p className="banner" role="note">
+            Synthetic demo: the bakery, its bank data and invoices are made up, and payments are
+            simulated. No money moves.
+          </p>
+        )}
         <Dashboard open={view === "dashboard"} tab={tab} onTab={setTab} onAsk={ask} busy={busy} />
         <OpenBoard value={openBoard}>
         <main className="messages" aria-live="polite" hidden={view !== "chat"}>
@@ -168,7 +184,7 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
         </OpenBoard>
         <footer className="composer" hidden={view !== "chat"}>
           <div className="chips" aria-label="Suggested questions">
-            {SUGGESTIONS.map((suggestion) => (
+            {(live ? [...SUGGESTIONS, LIVE_SUGGESTION] : SUGGESTIONS).map((suggestion) => (
               <button
                 key={suggestion}
                 type="button"
