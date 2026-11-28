@@ -440,6 +440,10 @@ class EnaTools:
         turn, self._turn = self._turn, Turn()
         return turn
 
+    def today(self) -> dt.date:
+        """The business's current day."""
+        return self._ledger.today()
+
     def state(self) -> str:
         """The ledger's state digest, part of the reply cache's key (`ena/cache.py`)."""
         return self._ledger.state()

@@ -142,7 +142,7 @@ RunnerFactory = Callable[[EnaTools], AgentRunner]
 def claude_runner(settings: ServeSettings) -> RunnerFactory:
     if not settings.model_credential:
         return lambda _tools: NoCredentialAgent()
-    return lambda tools: ClaudeAgent(settings.agent, build_server(tools))
+    return lambda tools: ClaudeAgent(settings.agent, build_server(tools), tools.today)
 
 
 def _now() -> dt.datetime:

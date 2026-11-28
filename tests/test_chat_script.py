@@ -359,7 +359,7 @@ LIVE = bool(os.environ.get("ANTHROPIC_API_KEY"))
 @pytest.mark.parametrize(("question", "language"), CASES)
 def test_the_real_agent_answers_each_question(question: Question, language: Language) -> None:
     s = setup(question)
-    agent = ClaudeAgent(AgentSettings(), build_server(s.tools))
+    agent = ClaudeAgent(AgentSettings(), build_server(s.tools), s.day)
     events = ask(Chat(s.tools, agent, s.day, cache=None), question.text(language))
     s.store.close()
     errors = [event.message for event in events if isinstance(event, ErrorEvent)]

@@ -26,6 +26,7 @@ from ena.agent import (
     ClaudeAgent,
     claims_payment,
     confirm,
+    system_prompt,
 )
 from ena.api import create_app
 from ena.cache import CachedReply, ReplyCache, normalize
@@ -455,18 +456,26 @@ def test_the_cache_refuses_money_replies_and_empty_questions() -> None:
 def test_the_agent_sees_only_enas_tools_and_no_secret() -> None:
     ena, _ = build(LEAN_WEEK, cache=None)
     settings = AgentSettings(_env_file=None, model="claude-test-model")
-    options = ClaudeAgent(settings, build_server(ena.agent.tools)).options()
+    tools = ena.agent.tools
+    options = ClaudeAgent(settings, build_server(tools), tools.today).options()
     assert options.model == "claude-test-model"
     assert options.tools == []
     assert options.allowed_tools == allowed_tools()
     assert options.setting_sources == []
     assert options.strict_mcp_config is True
     assert options.permission_mode == "dontAsk"
-    assert options.system_prompt == SYSTEM_PROMPT
+    assert options.system_prompt == system_prompt(LEAN_WEEK)
     assert options.env == dict.fromkeys(SECRET_ENV, "")
     assert options.resume is None
     assert list(options.mcp_servers) == ["ena"]  # type: ignore[arg-type]
     ena.store.close()
+
+
+def test_the_system_prompt_gives_the_business_day_not_the_clock() -> None:
+    prompt = system_prompt(dt.date(2026, 11, 16))
+    assert prompt.startswith(SYSTEM_PROMPT)
+    assert "Today is Monday 16 November 2026: the business's day in this demo." in prompt
+    assert "ignore any other date, such as the real one" in prompt
 
 
 def test_the_default_model() -> None:
