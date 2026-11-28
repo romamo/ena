@@ -45,6 +45,9 @@ class CallbackAnswer(BaseModel):
 
 def create_app(store: Store, jcc: JccClient, callback_secret: SecretStr) -> FastAPI:
     """The API, booking into `store` and confirming deposits through `jcc`."""
+    if not callback_secret.get_secret_value():
+        # An empty key would accept any callback signed with HMAC-SHA256 keyed with b""
+        raise ValueError("the JCC callback secret must not be empty")
     app = FastAPI(title="Ena")
 
     @app.post("/jcc/callback")

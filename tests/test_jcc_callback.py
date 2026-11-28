@@ -194,6 +194,19 @@ def test_store_refuses_a_second_sale_for_one_order() -> None:
     assert store.card_sales() == [SAVED_SALE]
 
 
+def test_app_refuses_an_empty_callback_secret() -> None:
+    """With an empty key anyone could sign a callback: HMAC-SHA256 keyed with b""."""
+    settings = JccSettings(
+        api_user="ena-api",
+        api_password="api-password",
+        callback_secret="test-callback-secret",
+        _env_file=None,
+    )
+    jcc = JccClient(settings, httpx.AsyncClient(transport=httpx.MockTransport(FakeJcc().handler)))
+    with pytest.raises(ValueError, match="callback secret"):
+        create_app(Store(":memory:"), jcc, SecretStr(""))
+
+
 def test_order_status_down_answers_503_so_jcc_retries() -> None:
     store = Store(":memory:")
     settings = JccSettings(
