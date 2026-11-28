@@ -170,6 +170,7 @@ def test_execute_exchanges_the_code_for_a_user_token() -> None:
     assert (executed.status, executed.bank_ref) == ("CPLT", "BOC-REF-7")
     token_form = parse_qs(sandbox.last("/oauth2/token").content.decode())
     assert token_form["code"] == ["code-1"]
+    assert token_form["redirect_uri"] == [REDIRECT]
     assert sandbox.last("/execute").headers["Authorization"] == "Bearer token-UserOAuth2Security"
 
 

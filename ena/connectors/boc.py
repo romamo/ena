@@ -331,6 +331,10 @@ class BocClient:
                     "grant_type": "authorization_code",
                     "scope": "UserOAuth2Security",
                     "code": code.value,
+                    # The consent URL carries it, so the exchange must name the same one
+                    # (RFC 6749 §4.1.3): with more than one URI on the app, BoC refuses
+                    # an exchange without it (400 apicoa400, 2026-11-28)
+                    "redirect_uri": self.settings.redirect_uri,
                 }
             )
         )
