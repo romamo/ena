@@ -1,0 +1,73 @@
+{
+  "documents": [
+    {
+      "kind": "CreditNote",
+      "id": "12a6eb7f-7d77-4ce1-b7d1-6613ab2471d4",
+      "documentNumber": "EFM-CN-2026-001",
+      "currency": "EUR",
+      "status": "Created",
+      "issueDate": "2026-11-28T00:00:00Z",
+      "modificationDate": "2026-11-28T09:10:21.982706Z",
+      "fileId": "cea66a67-220d-4313-94e1-54f75c97dbdd",
+      "dueDate": "0001-01-01T00:00:00",
+      "description": "Damaged sacks on invoice EFM-2026-002",
+      "issuerVatNumber": "99900100X",
+      "issuerTaxIdNumber": "12728112K",
+      "issuerCompanyRegistrationNumber": "HE7281126",
+      "issuerBusinessUnitId": "",
+      "issuerBusinessUnitIdentifiers": [],
+      "issuerLegalEntityDetails": {
+        "registeredBusinessName": "Ena Flour Mill Ltd",
+        "registeredAddress": "1 Demo Street",
+        "registeredAddressPostalCode": "1065",
+        "registeredAddressCity": "Nicosia",
+        "registeredCountry": "Cyprus",
+        "registeredCountryCode": "CY"
+      },
+      "recipientVatNumber": "10346191X",
+      "recipientTaxIdNumber": "10346191X",
+      "recipientCompanyRegistrationNumber": "HE346191",
+      "recipientBusinessUnitId": "",
+      "recipientBusinessUnitIdentifiers": [],
+      "recipientLegalEntityDetails": {
+        "registeredBusinessName": "DUMMY",
+        "registeredAddress": "DUMMY",
+        "registeredAddressPostalCode": "8800",
+        "registeredAddressCity": "DUMMY",
+        "registeredCountry": "Cyprus",
+        "registeredCountryCode": "CY"
+      },
+      "orderReference": null,
+      "contractNumber": "",
+      "lineItems": [
+        {
+          "code": "",
+          "description": "Credit for damaged rye flour sacks",
+          "quantity": 1,
+          "unit": "Pieces",
+          "price": 100,
+          "discountPercentage": 0,
+          "taxPercentage": "NineteenPercent",
+          "discount": 0,
+          "lineTotal": 119,
+          "taxAmount": 19
+        }
+      ],
+      "net": 100,
+      "vatAmount": 19,
+      "totalAmount": 119,
+      "discount": 0,
+      "initial": 100,
+      "documents": [],
+      "payments": [],
+      "supportingFilesIds": [],
+      "revisionNumber": 0,
+      "lastActionComment": ""
+    }
+  ],
+  "pageResponse": {
+    "currentPage": 1,
+    "totalPages": 1,
+    "totalItems": 1
+  }
+}
