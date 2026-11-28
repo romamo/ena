@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, sendChat, type CardEvent, type ChatEvent } from "./api";
 import { Card, FetchContext } from "./cards";
+import { rich } from "./rich";
 
 // The demo questions of tests/chat_questions.json the chips offer
 export const SUGGESTIONS = [
@@ -120,7 +121,7 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
                 {message.parts.map((part, index) =>
                   part.kind === "text" ? (
                     <p key={index} className="text">
-                      {part.text}
+                      {rich(part.text)}
                     </p>
                   ) : (
                     <Card key={index} event={part.event} />
