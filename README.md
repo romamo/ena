@@ -96,6 +96,8 @@ Members: Roman, Youssef and Keith. Keith's area is still to agree.
 - [docs/product.md](docs/product.md): the mission, goals, non-goals and quality bar
 - [docs/plan.md](docs/plan.md): the team plan: decisions, roles, weekend, pitch hook, the one number, open tasks
 - [docs/build-plan.md](docs/build-plan.md): proposed architecture, data model, tools, rules, tasks and timeline
+- [docs/business-model-canvas.md](docs/business-model-canvas.md): the business model canvas: who pays, the channels, what Bank of Cyprus gains
+- [docs/mockups/](docs/mockups/README.md): mockups of the owner's screens: the approval above the limit, receipts, the cash forecast, the credit offer and the month end
 - [docs/pitch/](docs/pitch/README.md): the pitch deck of 5 slides with speaker notes
 - [docs/hackathon.md](docs/hackathon.md): the hackathon reference: APIs, links, rules, how the jury scores
 - [docs/interviews/](docs/interviews/guide.md): the customer interview guide (English, Russian, Greek)
