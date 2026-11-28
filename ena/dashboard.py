@@ -62,6 +62,14 @@ class Receipts(_View):
     """Newest first."""
 
 
+class ForecastView(_View):
+    """The forecast card's data, with the safe line the chart draws."""
+
+    forecast: Forecast
+    threshold_cents: int
+    """The instalment plus a week of outflows: a week closing below it is lean."""
+
+
 Verdict = Literal["no_lean_week", "reserve_covers", "loan_needed"]
 """Whether the forecast needs money: no lean week, a gap the owner's reserve covers, or a
 gap only a loan covers. The loan and reserve rules decide; `credit` only names it."""
@@ -96,7 +104,7 @@ class Dashboard:
         paid = [r for r in receipts if r.result == PaymentResult.PAID]
         by_ena = [r for r in paid if r.actor is Actor.ENA]
         unpaid = [i for i in self._ledger.invoices() if i.status is not InvoiceStatus.PAID]
-        forecast = self.forecast()
+        forecast = self._ledger.cash_forecast().forecast
         lean = next((w for w in forecast.weeks if w.week_start == forecast.lean_week), None)
         return Overview(
             as_of=self._ledger.today(),
@@ -118,8 +126,9 @@ class Dashboard:
     def receipts(self) -> Receipts:
         return Receipts(receipts=tuple(reversed(self._store.receipts())))
 
-    def forecast(self) -> Forecast:
-        return self._ledger.cash_forecast().forecast
+    def forecast(self) -> ForecastView:
+        cash = self._ledger.cash_forecast()
+        return ForecastView(forecast=cash.forecast, threshold_cents=cash.threshold_cents)
 
     def credit(self) -> Credit:
         cash = self._ledger.cash_forecast()

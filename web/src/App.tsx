@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, sendChat, type CardEvent, type ChatEvent } from "./api";
-import { Card, FetchContext } from "./cards";
+import { Card, FetchContext, OpenBoard, type BoardTab } from "./cards";
 import { Dashboard } from "./Dashboard";
 
 // The demo questions of tests/chat_questions.json the chips offer
@@ -48,6 +48,7 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<"chat" | "dashboard">("chat");
+  const [tab, setTab] = useState<BoardTab>("overview");
   const nextId = useRef(0);
   const end = useRef<HTMLDivElement>(null);
 
@@ -88,6 +89,17 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
     }
   }
 
+  function openBoard(on: BoardTab) {
+    setTab(on);
+    setView("dashboard");
+  }
+
+  /** A question asked from the dashboard: back to the chat, sent as the owner's. */
+  function ask(question: string) {
+    setView("chat");
+    void send(question);
+  }
+
   function submit(event: FormEvent) {
     event.preventDefault();
     void send(draft);
@@ -116,7 +128,8 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
           Synthetic demo: the bakery, its bank data and invoices are made up, and payments are
           simulated. No money moves.
         </p>
-        <Dashboard open={view === "dashboard"} />
+        <Dashboard open={view === "dashboard"} tab={tab} onTab={setTab} onAsk={ask} busy={busy} />
+        <OpenBoard value={openBoard}>
         <main className="messages" aria-live="polite" hidden={view !== "chat"}>
           {messages.length === 0 ? (
             <p className="muted empty">Ask about your cash, invoices and payments.</p>
@@ -150,6 +163,7 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
           )}
           <div ref={end} />
         </main>
+        </OpenBoard>
         <footer className="composer" hidden={view !== "chat"}>
           <div className="chips" aria-label="Suggested questions">
             {SUGGESTIONS.map((suggestion) => (

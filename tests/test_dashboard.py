@@ -134,9 +134,12 @@ def test_receipts_are_newest_first(board: Board) -> None:
     assert refs == [FLOUR.id, DAIRY.id]
 
 
-def test_the_forecast_is_the_ledgers(board: Board) -> None:
-    expected = board.ledger.cash_forecast().forecast.model_dump(mode="json")
-    assert board.get("forecast") == expected
+def test_the_forecast_is_the_ledgers_with_its_safe_line(board: Board) -> None:
+    cash = board.ledger.cash_forecast()
+    assert board.get("forecast") == {
+        "forecast": cash.forecast.model_dump(mode="json"),
+        "threshold_cents": cash.threshold_cents,
+    }
 
 
 def test_credit_says_whether_the_lean_week_needs_a_loan(board: Board) -> None:

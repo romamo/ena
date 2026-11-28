@@ -204,10 +204,12 @@ export type Credit = {
   loan: OfferCard | null;
 };
 
+export type ForecastView = { forecast: ForecastCard; threshold_cents: number };
+
 export type DashboardRoutes = {
   overview: Overview;
   receipts: Receipts;
-  forecast: ForecastCard;
+  forecast: ForecastView;
   credit: Credit;
 };
 

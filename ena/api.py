@@ -51,10 +51,9 @@ from ena.connectors.jcc import (
     confirm_deposit,
     verify_checksum,
 )
-from ena.dashboard import Credit, Dashboard, Overview, Receipts
+from ena.dashboard import Credit, Dashboard, ForecastView, Overview, Receipts
 from ena.gate import Gate, GateError
 from ena.mcp_server import ToolError
-from ena.models import Forecast
 from ena.store import Store
 
 FORM = "application/x-www-form-urlencoded"
@@ -137,7 +136,7 @@ def create_app(
             return board.receipts()
 
         @app.get("/dashboard/forecast")
-        async def forecast() -> Forecast:
+        async def forecast() -> ForecastView:
             try:
                 return board.forecast()
             except ToolError as error:
