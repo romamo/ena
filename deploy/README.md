@@ -24,7 +24,7 @@ Cloudfall is pinned to 0.8.0rc34 for its frontend build steps (`npm ci` and `npm
 
 ## Deploy a new release
 
-Needs Node.js 22 or newer and npm on the controller, root SSH to ena-1 with the `roman` key, and the repository's `.env` with the Anthropic key, the Jinius client and the BoC app (`BOC_CLIENT_ID`, `BOC_CLIENT_SECRET`, `BOC_SUBSCRIPTION_ID`, `BOC_ACCOUNT_ID`). The app in the BoC sandbox portal (My Apps) must have `https://ena.cloudfall.dev/boc/consent` as its redirect URI, since BoC sends the browser only to the registered one.
+Needs Node.js 22 or newer and npm on the controller, root SSH to ena-1 with the `roman` key, and the repository's `.env` with the Anthropic key, the Jinius client, the BoC app (`BOC_CLIENT_ID`, `BOC_CLIENT_SECRET`, `BOC_SUBSCRIPTION_ID`, `BOC_ACCOUNT_ID`) and the JCC sandbox merchant (`JCC_API_USER`, `JCC_API_PASSWORD`, `JCC_CALLBACK_SECRET`). The env file replaces the server's settings as a whole, so a deploy that leaves a group out turns that feature off: without the JCC lines `/jcc/callback` answers 503 and the agent makes no pay link. The JCC portal's webhook must point at `https://ena.cloudfall.dev/jcc/callback`. The app in the BoC sandbox portal (My Apps) must have `https://ena.cloudfall.dev/boc/consent` as its redirect URI, since BoC sends the browser only to the registered one.
 
 ```bash
 uv sync
@@ -41,8 +41,8 @@ uv run cloudfall release approve ena --release <release>
 Write the server's secrets to a private env file under `tmp/` (never committed): the Anthropic key, the Jinius sandbox buyer client so the dashboard's Jinius tab reads invoices live (without it the tab answers 503), and the BoC app's keys, subscription and account. `ena-serve --bank boc` refuses to start without the BoC ones, so the health check fails and the deploy rolls back. The redirect URI is not taken from `.env`: the runbook writes the hosted one, since Cloudfall 0.8.0rc34 does not pass a component's `environment` to the service (only the env file reaches it), and `ena-serve` refuses the default `https://localhost/`. Deploy behind the health check, which rolls back on its own when the check fails, then delete the file:
 
 ```bash
-umask 077 && mkdir -p tmp/env && grep -E '^(ANTHROPIC_API_KEY|JINIUS_CLIENT_ID|JINIUS_CLIENT_SECRET|BOC_CLIENT_ID|BOC_CLIENT_SECRET|BOC_SUBSCRIPTION_ID|BOC_ACCOUNT_ID)=' ../.env > tmp/env/ena.env
-echo 'BOC_REDIRECT_URI=https://ena.cloudfall.dev/boc/consent' >> tmp/env/ena.env
+umask 077 && mkdir -p tmp/env && grep -E '^(ANTHROPIC_API_KEY|JINIUS_CLIENT_ID|JINIUS_CLIENT_SECRET|BOC_CLIENT_ID|BOC_CLIENT_SECRET|BOC_SUBSCRIPTION_ID|BOC_ACCOUNT_ID|JCC_API_USER|JCC_API_PASSWORD|JCC_CALLBACK_SECRET)=' ../.env > tmp/env/ena.env
+printf 'BOC_REDIRECT_URI=https://ena.cloudfall.dev/boc/consent\nJCC_RETURN_URL=https://ena.cloudfall.dev/\n' >> tmp/env/ena.env
 uv run cloudfall deploy ena --release <release> --env-file tmp/env/ena.env --yes
 rm tmp/env/ena.env
 ```
