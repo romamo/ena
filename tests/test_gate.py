@@ -37,6 +37,8 @@ class FakeBank:
     status: str = "CPLT"
     down: bool = False
     calls: list[tuple[str, int, str]] = field(default_factory=list)
+    simulated: bool = False
+    """Whether its payments are simulated; False makes it a real, bocAPI-shaped bank."""
 
     def pay(self, action: str, amount_cents: int, ref: str) -> str:
         self.calls.append((action, amount_cents, ref))
@@ -167,6 +169,112 @@ def test_a_duplicate_trigger_after_approval_returns_the_owners_receipt(
     assert gate.request_payment("pay_invoice", 124_000, "inv-17") == receipt
     assert store.receipts() == [receipt]
     assert len(bank.calls) == 1
+
+
+# A simulated bank: its payments say so (docs/build-plan.md §3 principle 5)
+
+SIMULATED = " (simulated: no money moved)"
+
+
+def _paid_by(gate: Gate, path: str) -> Receipt:
+    if path == "auto":
+        receipt = gate.request_payment("pay_invoice", 12_000, "inv-1")
+        assert isinstance(receipt, Receipt)
+        return receipt
+    return gate.approve(_pending(gate).id)
+
+
+@pytest.mark.parametrize("path", ["auto", "approve"])
+def test_a_payment_a_simulated_bank_completed_is_labelled_simulated(
+    store: Store, bank: FakeBank, path: str
+) -> None:
+    bank.simulated = True
+    gate = Gate(BUSINESS, store, bank, FakeClock())
+
+    receipt = _paid_by(gate, path)
+
+    assert (receipt.result, receipt.simulated) == ("paid", True)
+    assert receipt.explanation.endswith("bank status CPLT" + SIMULATED)
+    assert store.receipts() == [receipt]
+    assert gate.request_payment("pay_invoice", receipt.amount_cents, receipt.ref) == receipt
+    assert len(bank.calls) == 1
+
+
+@pytest.mark.parametrize("path", ["auto", "approve"])
+def test_a_payment_a_real_bank_completed_is_not_labelled_simulated(
+    gate: Gate, store: Store, path: str
+) -> None:
+    receipt = _paid_by(gate, path)
+
+    assert (receipt.result, receipt.simulated) == ("paid", False)
+    assert "simulated" not in receipt.explanation
+    assert store.receipts() == [receipt]
+
+
+@pytest.mark.parametrize("path", ["auto", "approve"])
+def test_a_failed_payment_through_a_simulated_bank_claims_no_simulated_payment(
+    store: Store, bank: FakeBank, path: str
+) -> None:
+    bank.simulated = True
+    bank.status = "RJCT"
+    gate = Gate(BUSINESS, store, bank, FakeClock())
+
+    receipt = _paid_by(gate, path)
+
+    assert (receipt.result, receipt.simulated) == ("failed", False)
+    assert "simulated" not in receipt.explanation
+
+
+def test_a_decline_with_a_simulated_bank_claims_no_simulated_payment(
+    store: Store, bank: FakeBank
+) -> None:
+    bank.simulated = True
+    gate = Gate(BUSINESS, store, bank, FakeClock())
+
+    receipt = gate.decline(_pending(gate).id)
+
+    assert (receipt.result, receipt.simulated) == ("declined", False)
+
+
+class UndeclaredBank:
+    """A bank that doesn't say whether its payments are simulated."""
+
+    def pay(self, action: str, amount_cents: int, ref: str) -> str:
+        return "CPLT"
+
+
+def test_a_bank_that_does_not_declare_counts_as_simulated(store: Store) -> None:
+    gate = Gate(BUSINESS, store, UndeclaredBank(), FakeClock())
+
+    receipt = gate.request_payment("pay_invoice", 12_000, "inv-1")
+
+    assert isinstance(receipt, Receipt)
+    assert receipt.simulated is True
+    assert receipt.explanation.endswith(SIMULATED)
+
+
+@dataclass
+class VagueBank:
+    simulated: object
+
+    def pay(self, action: str, amount_cents: int, ref: str) -> str:
+        return "CPLT"
+
+
+@pytest.mark.parametrize("simulated", [None, 0, 1, "yes"])
+def test_a_bank_whose_declaration_is_not_a_bool_is_refused(store: Store, simulated: object) -> None:
+    with pytest.raises(TypeError, match="simulated must be a bool"):
+        Gate(BUSINESS, store, VagueBank(simulated), FakeClock())
+
+
+def test_a_receipt_stored_before_the_label_loads_as_not_simulated() -> None:
+    stored = (
+        '{"id": "receipt-inv-1", "at": "2026-11-28T09:00:00Z", "actor": "ena",'
+        ' "action": "pay_invoice", "amount_cents": 12000, "ref": "inv-1", "result": "paid",'
+        ' "explanation": "paid €120.00, bank status CPLT"}'
+    )
+
+    assert Receipt.model_validate_json(stored).simulated is False
 
 
 # Above the limit: an approval request

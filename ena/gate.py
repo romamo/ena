@@ -23,6 +23,9 @@ from ena.store import Store
 COMPLETED = "CPLT"
 """The bank's status for a completed payment."""
 
+SIMULATED_NOTE = " (simulated: no money moved)"
+"""Ends the explanation of a payment a simulated bank completed."""
+
 
 class PaymentResult(StrEnum):
     PAID = "paid"
@@ -36,11 +39,25 @@ class GateError(RuntimeError):
 
 
 class PaymentBank(Protocol):
-    """The payment connector, as the gate sees it."""
+    """The payment connector, as the gate sees it.
+
+    A bank declares whether its payments are simulated with a `simulated` bool attribute:
+    a real bank (bocAPI) sets it False. A bank that doesn't declare it counts as simulated,
+    so no receipt says real money moved unless its bank says so (docs/build-plan.md §3
+    principle 5).
+    """
 
     def pay(self, action: str, amount_cents: int, ref: str) -> str:
         """Make the payment and return the bank's status (`CPLT` when completed)."""
         ...
+
+
+def is_simulated(bank: PaymentBank) -> bool:
+    """The bank's `simulated` declaration, True when it makes none; refuses a non-bool."""
+    declared = getattr(bank, "simulated", True)
+    if type(declared) is not bool:
+        raise TypeError(f"a bank's simulated must be a bool, got {declared!r}")
+    return declared
 
 
 Clock = Callable[[], dt.datetime]
@@ -56,6 +73,7 @@ class Gate:
         self._business = business
         self._store = store
         self._bank = bank
+        self._simulated = is_simulated(bank)
         self._clock = clock
 
     def request_payment(
@@ -137,9 +155,13 @@ class Gate:
     def _pay(self, actor: Actor, action: str, amount_cents: int, ref: str, why: str) -> Receipt:
         """Call the bank and write the receipt; the caller has recorded the attempt."""
         status = self._bank.pay(action, amount_cents, ref)
+        simulated = False
         if status == COMPLETED:
             result = PaymentResult.PAID
+            simulated = self._simulated
             explanation = f"{why}; paid {_euros(amount_cents)}, bank status {status}"
+            if simulated:
+                explanation += SIMULATED_NOTE
         else:
             result = PaymentResult.FAILED
             explanation = f"{why}; the bank returned {status!r}, not paid and not retried"
@@ -152,6 +174,7 @@ class Gate:
             ref=ref,
             result=result,
             explanation=explanation,
+            simulated=simulated,
         )
         self._store.add_receipt(receipt)
         return receipt

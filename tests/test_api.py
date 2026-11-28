@@ -81,7 +81,10 @@ class ScriptedAgent:
 
 @dataclass
 class FakeBank:
+    """A real, bocAPI-shaped bank: its payments are not simulated."""
+
     calls: list[str] = field(default_factory=list)
+    simulated: bool = False
 
     def pay(self, action: str, amount_cents: int, ref: str) -> str:
         self.calls.append(ref)
@@ -160,6 +163,7 @@ def test_a_payment_within_the_limit_streams_its_receipt_card(api: Api) -> None:
     assert card["card_kind"] == "receipt"
     assert card["card"]["result"] == "paid"
     assert card["card"]["ref"] == DAIRY.id
+    assert card["card"]["simulated"] is False
     assert events[1][1]["text"] == "Paid Kyrenia Dairy (synthetic) €180.00."
     assert events[2][1] == {
         "kind": "done",
@@ -232,6 +236,7 @@ def test_a_payment_above_the_limit_is_an_approval_card_until_the_owner_taps(api:
     assert answer.status_code == 200
     receipt = Receipt.model_validate(answer.json()["card"])
     assert answer.json()["card_kind"] == "receipt"
+    assert answer.json()["card"]["simulated"] is False
     assert (receipt.actor, receipt.result, receipt.ref) == (Actor.OWNER, "paid", FLOUR.id)
     assert api.bank.calls == [FLOUR.id]
 
