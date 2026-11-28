@@ -19,6 +19,11 @@ describe("rich", () => {
     expect(html("2 ** 3 and 4 ** 5")).toBe("2 ** 3 and 4 ** 5");
   });
 
+  it("keeps a bold run on one line, so a stray ** never pairs across paragraphs", () => {
+    expect(html("2 **3\n\nNext **bold**")).toBe("2 **3\n\nNext <strong>bold</strong>");
+    expect(html("**x**")).toBe("<strong>x</strong>");
+  });
+
   it("never renders the text as HTML", () => {
     expect(html("**<img src=x>**")).toBe("<strong>&lt;img src=x&gt;</strong>");
   });
