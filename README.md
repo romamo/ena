@@ -101,9 +101,10 @@ uv run ena-boc token
 | Software | Roman |
 | Pitch on stage | Youssef |
 | Presentation, idea work, customer interviews | Together |
-| Demo, submission and organisers | Open |
+| Demo | Keith |
+| Submission and organisers | Open |
 
-Members: Roman, Youssef and Keith. Keith's area is still to agree.
+Members: Roman, Youssef and Keith.
 
 ## Repository
 

@@ -55,10 +55,10 @@ One month of a bakery owner with Ena, replayed from the synthetic month. The amo
 | Presentation | Deck of 4 to 5 slides; mockups of the owner's screens (approval above the limit, receipts, forecast, credit offer) | Together |
 | Idea work | Positioning, business model canvas (who pays, how much, what BoC gains), the one number | Together |
 | Customer interviews | Finding micro-businesses, the interviews, numbers and quotes | Together |
-| Demo | The demo script, the synthetic month, a backup video, who clicks on stage | Open |
+| Demo | The demo script, the synthetic month, a backup video, who clicks on stage | Keith (2026-11-28) |
 | Submission and organisers | GitHub usernames, F1 form, sandbox sign-ups, mentors, the final repo (README, sample data, mockups, canvas, deck) | Open |
 
-Team: Roman, Youssef and Keith. Keith's area is still to agree.
+Team: Roman, Youssef and Keith.
 
 ## Weekend
 
@@ -115,4 +115,4 @@ The organisers ask every team to measure one success metric. Ours: the owner's h
 - [ ] F1 Form of Needs, due Friday 19:00: a mentor from BoC SME lending (does the Digital Business Loan fit micro-businesses; can it be applied for through an API in the sandbox or should we emulate it), plus a Jinius mentor
 - [x] Ask the organisers: the jury's Q&A is separate from the 4 minutes, which include the live demo (2026-11-28)
 - [ ] About 5 customer interviews on Saturday morning: a photo studio and a bakery are lined up; find a barber and one or two more
-- [ ] Agree Keith's area: Demo, or Submission and organisers
+- [x] Agree Keith's area: Demo (2026-11-28)
