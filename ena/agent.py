@@ -16,9 +16,10 @@ after its last tool call, sent when the turn ends.
 1. A question the reply cache holds is answered from it (`ena/cache.py`)
 2. Otherwise the agent runs; its reply comes when the turn ends (`ClaudeAgent.replies`),
    and the cards the tools produced (approvals, receipts, the forecast, offers) go before it.
-   A reply that speaks of an approval also shows the approvals still pending that no tool
-   showed this turn: asked again, the model may only recall that the payment waits for the
-   owner, and the card it points at must be there to tap
+   A reply that asks for the owner's approval also shows every approval still pending that
+   no tool showed this turn: asked again, the model may only recall that the payment waits
+   for the owner, and the card it points at must be there to tap. A reply that only says
+   something was approved shows none
 3. No "paid" without a receipt: a piece that says a payment was made, when the gate
    returned no paid receipt for a payment asked earlier in the turn, is marked
    unconfirmed; an old receipt the agent only listed backs only a sentence that cites
@@ -218,8 +219,10 @@ def claims_payment(text: str) -> bool:
 
 
 _SENTENCE = re.compile(r"(?<=[.!?;])\s+|\n+")
-_APPROVAL = re.compile(r"approv|[εέ]γκρι", re.IGNORECASE)
-"""A reply that speaks of an approval, in English or Greek."""
+# Greek letters here are meant: "έγκριση", "εγκρίσεις" (approval, approvals),
+# "εγκρίνετε" (you approve), with or without the accent (capitals drop it)
+_APPROVAL = re.compile(r"\bapprov(?:al|als|e)\b|[εέ]γκρισ|εγκρίσ|εγκριν|εγκρίν", re.IGNORECASE)
+"""A reply that asks for an approval, in English or Greek; not "approved" or "εγκρίθηκε"."""
 
 
 def confirm(
@@ -338,6 +341,8 @@ class Chat:
             except AgentError as error:
                 for event in self._new_cards(sent):
                     yield event
+                for text_event in texts:
+                    yield text_event
                 self._tools.finish_turn()
                 yield ErrorEvent(message=f"Ena could not answer, try again: {error}")
                 return
@@ -357,7 +362,8 @@ class Chat:
                 self._cache.put(message, day, state, cached)
 
     def _show_pending_approvals(self, reply: str) -> None:
-        """Add to the turn the pending approvals a reply speaks of that it does not show."""
+        """When the reply asks for an approval, add every pending approval the turn doesn't
+        show yet, whichever invoice it is for: the owner taps the one they mean."""
         if not _APPROVAL.search(reply):
             return
         cards = self._tools.current_turn().cards
