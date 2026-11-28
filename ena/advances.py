@@ -17,7 +17,13 @@ The gate pays within the owner's limit and otherwise asks for the owner's approv
 its ref (`repay-<offer id>`) makes a second posting of the line get the same answer back.
 
 A simulated advance is never repaid with real money: when the gate's bank moves money,
-the repayment is refused (`AdvanceError`) and nothing is paid.
+the repayment is refused (`AdvanceError` here, and the gate refuses its `repay-` ref too,
+also at the owner's approval) and nothing is paid.
+
+Nothing in the app posts statement lines yet: the server serves one day of the synthetic
+month and has no statement feed, so `observe` runs in the tests and the replay only. Once
+a feed posts the final payment, the repayment's approval card reaches the owner like any
+other approval.
 
 Neither the credit nor the repayment is a line on the ledger's statement
 (`ena/mcp_server.py`): no money moved for the advance, so the balance and the forecast
@@ -28,7 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ena.gate import Clock, Gate
+from ena.gate import REPAY_PREFIX, Clock, Gate
 from ena.models import (
     Actor,
     AdvanceStatus,
@@ -124,7 +130,7 @@ class Advances:
             return self._gate.request_payment(
                 f"Repay the event advance for {event.customer} (simulated)",
                 offer.amount_cents,
-                f"repay-{offer.id}",
+                f"{REPAY_PREFIX}{offer.id}",
             )
         return None
 

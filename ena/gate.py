@@ -8,6 +8,11 @@ is never paid again: a duplicate trigger gets the same receipt back, and a faile
 payment is not retried. An attempt is recorded before the bank is called, so when the
 call raises and its outcome is unknown, the next trigger for the ref fails loudly
 instead of paying again.
+
+A ref starting with `REPAY_PREFIX` repays a simulated event advance (`ena/advances.py`):
+the gate refuses it, before any attempt or approval is recorded, when its bank moves real
+money, both when it is requested and when the owner approves it. So an approval created
+on the stand-in bank never pays real money after a restart onto a real one.
 """
 
 from __future__ import annotations
@@ -24,6 +29,9 @@ COMPLETED = "CPLT"
 """The bank's status for a completed payment."""
 
 SIMULATED_NOTE = " (simulated: no money moved)"
+
+REPAY_PREFIX = "repay-"
+"""Starts the ref of a simulated advance's repayment: never paid with real money."""
 """Ends the explanation of a payment a simulated bank completed."""
 
 
@@ -94,6 +102,7 @@ class Gate:
             return existing
         if self._store.has_attempt(ref):
             raise GateError(f"payment for {ref} may have gone out: check the bank before retrying")
+        self._refuse_real_money_for_simulated(ref)
         pending = self._store.pending_approval_for(ref)
         if pending is not None:
             return pending
@@ -122,6 +131,7 @@ class Gate:
     def approve(self, approval_id: str) -> Receipt:
         """The owner's approval: pay once and write the owner's receipt."""
         request, ref, now = self._decide(approval_id, ApprovalStatus.APPROVED)
+        self._refuse_real_money_for_simulated(ref)
         self._store.record_approval(request, ref, now)
         return self._pay(
             Actor.OWNER, request.action, request.amount_cents, ref, "Approved by the owner"
@@ -142,6 +152,10 @@ class Gate:
         )
         self._store.record_decline(request, receipt)
         return receipt
+
+    def _refuse_real_money_for_simulated(self, ref: str) -> None:
+        if ref.startswith(REPAY_PREFIX) and not self._simulated:
+            raise GateError(f"{ref} repays a simulated advance: it is never paid with real money")
 
     def _decide(
         self, approval_id: str, status: ApprovalStatus

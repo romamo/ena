@@ -2,17 +2,18 @@
 from the final payment through the gate, on the synthetic month with a fake bank."""
 
 import datetime as dt
+import sqlite3
 from dataclasses import dataclass, field
 
 import pytest
 
 from ena.advances import ACCEPTED, DECLINED, AdvanceError, Advances
-from ena.gate import Gate, PaymentResult
+from ena.gate import Gate, GateError, PaymentResult
 from ena.mcp_server import EnaTools, Ledger, ReplayDay
 from ena.models import AdvanceStatus, ApprovalRequest, Offer, Receipt, Transaction
 from ena.replay import TZ, DayStarted, TransactionPosted, month_events
 from ena.seed import BOOKED_EVENT_ID, LEAN_WEEK, synthetic_month
-from ena.store import Store
+from ena.store import Store, StoreError
 
 MONTH = synthetic_month()
 WEDDING = next(event for event in MONTH.events if event.id == BOOKED_EVENT_ID)
@@ -217,3 +218,70 @@ def test_the_november_replay_repays_nothing() -> None:
     for event in month_events(MONTH):
         s.advances.observe(event)
     assert s.bank.calls == []
+
+
+def test_an_approval_made_on_the_stand_in_never_pays_real_money_later() -> None:
+    # The repayment's approval is created on the stand-in bank; the server restarts onto a
+    # bank that moves real money, on the same store: the owner's approval pays nothing
+    s = setup()
+    advance = offer(s)
+    s.advances.accept(advance.id)
+    s.advances.repay_from(final_payment())
+    approval = s.store.pending_approval_for(f"repay-{advance.id}")
+    assert approval is not None
+    real = FakeBank(simulated=False)
+    restarted = Gate(MONTH.business, s.store, real, lambda: NOW)
+    with pytest.raises(GateError, match="never paid with real money"):
+        restarted.approve(approval.id)
+    assert real.calls == []
+    assert s.store.pending_approval_for(f"repay-{advance.id}") == approval
+    assert not s.store.has_attempt(f"repay-{advance.id}")
+
+
+def test_the_gate_refuses_a_repayment_on_a_real_bank_before_recording_anything() -> None:
+    store = Store(":memory:")
+    real = FakeBank(simulated=False)
+    gate = Gate(MONTH.business, store, real, lambda: NOW)
+    with pytest.raises(GateError, match="never paid with real money"):
+        gate.request_payment("Repay", 10_000, "repay-advance-x-10000")
+    assert real.calls == []
+    assert not store.has_attempt("repay-advance-x-10000")
+    assert store.pending_approval_for("repay-advance-x-10000") is None
+
+
+# The store's own guards, under the advances' checks
+
+
+def accepted_receipt(ref: str) -> Receipt:
+    return Receipt(
+        id=f"receipt-{ref}",
+        at=NOW,
+        actor="owner",
+        action="Accept",
+        amount_cents=1,
+        ref=ref,
+        result=ACCEPTED,
+        explanation="test",
+    )
+
+
+def test_the_store_decides_an_offer_once_and_writes_no_receipt_the_second_time() -> None:
+    s = setup()
+    advance = offer(s)
+    s.store.record_advance_decision(advance.id, AdvanceStatus.ACCEPTED, accepted_receipt("a"))
+    with pytest.raises(StoreError, match="is not offered"):
+        s.store.record_advance_decision(advance.id, AdvanceStatus.DECLINED, accepted_receipt("b"))
+    assert s.store.receipt_for("b") is None
+
+
+def test_the_store_keeps_one_accepted_advance_per_event() -> None:
+    s = setup(day=dt.date(2026, 11, 2))
+    first = offer(s)
+    s.day.observe(DayStarted(at=NOW, day=LEAN_WEEK))
+    second = offer(s)
+    s.store.record_advance_decision(first.id, AdvanceStatus.ACCEPTED, accepted_receipt("a"))
+    with pytest.raises(sqlite3.IntegrityError):
+        s.store.record_advance_decision(second.id, AdvanceStatus.ACCEPTED, accepted_receipt("b"))
+    stored = s.store.advance(second.id)
+    assert stored is not None and stored.status is AdvanceStatus.OFFERED
+    assert s.store.receipt_for("b") is None
