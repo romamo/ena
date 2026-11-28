@@ -29,6 +29,7 @@ Not here yet: `get_event_pattern` and `propose_event_advance` (no event rule exi
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -136,6 +137,14 @@ class Ledger:
             if invoice.id == invoice_id:
                 return invoice
         raise ToolError(f"no invoice {invoice_id!r} has arrived")
+
+    def state(self) -> str:
+        """A digest of what the store has changed in the month: the receipts, the invoices'
+        statuses (pending approvals among them) and the card sales booked from JCC."""
+        parts = [f"receipt {r.id} {r.result}" for r in self._store.receipts()]
+        parts += [f"invoice {i.id} {i.status}" for i in self.invoices()]
+        parts += [f"sale {s.jcc_order_id}" for s in self._store.card_sales()]
+        return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
 
     def card_sales(self, before: dt.date) -> list[CardSale]:
         """The seed's card sales and those booked from JCC, dated before `before`."""
@@ -344,6 +353,10 @@ class EnaTools:
     def finish_turn(self) -> Turn:
         turn, self._turn = self._turn, Turn()
         return turn
+
+    def state(self) -> str:
+        """The ledger's state digest, part of the reply cache's key (`ena/cache.py`)."""
+        return self._ledger.state()
 
     # Reads
 

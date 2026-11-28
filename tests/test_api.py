@@ -297,11 +297,32 @@ def test_a_read_only_reply_is_cached_by_question_and_day(tmp_path: Path) -> None
         assert [e for e in again if e[0] != "done"] == [e for e in first if e[0] != "done"]
         assert again[-1][1]["cached"] is True
         assert len(ena.agent.prompts) == 1
-    stored = ReplyCache(SEED, path).get("Will I be short this month?", LEAN_WEEK)
+    state = ena.agent.tools.state()
+    question = "Will I be short this month?"
+    stored = ReplyCache(SEED, path).get(question, LEAN_WEEK, state)
     assert stored is not None
     assert stored.text == "The week of 16 Nov is lean."
-    assert ReplyCache(SEED, path).get("Will I be short this month?", MONTH.last_day) is None
-    assert ReplyCache(SEED + 1, path).get("Will I be short this month?", LEAN_WEEK) is None
+    assert ReplyCache(SEED, path).get(question, MONTH.last_day, state) is None
+    assert ReplyCache(SEED + 1, path).get(question, LEAN_WEEK, state) is None
+    assert ReplyCache(SEED, path).get(question, LEAN_WEEK, "another state") is None
+    ena.store.close()
+
+
+def test_a_cached_reply_is_not_replayed_after_money_moved_the_same_day() -> None:
+    ena, http = build(FLOUR.issue_date, ReplyCache(SEED))
+    with http:
+        ena.chat("What's my balance?", Call("get_balance"), Say("The balance before."))
+        ena.chat("Pay the dairy", Call("pay_invoice", {"invoice_id": DAIRY.id}), Say("Paid."))
+        after = ena.chat("What's my balance?", Call("get_balance"), Say("The balance after."))
+        assert after[-1][1] == {
+            "kind": "done",
+            "text": "The balance after.",
+            "unconfirmed": False,
+            "cached": False,
+        }
+        again = ena.chat("What's my balance?", Say("not used"))
+        assert again[-1][1]["text"] == "The balance after."
+        assert again[-1][1]["cached"] is True
     ena.store.close()
 
 
@@ -322,12 +343,14 @@ def test_a_reply_that_moved_money_or_was_marked_is_not_cached(tmp_path: Path) ->
     cache = ReplyCache(SEED)
     ena, http = build(FLOUR.issue_date, cache)
     with http:
+        before = ena.agent.tools.state()
         ena.chat(
             "Pay the dairy invoice", Call("pay_invoice", {"invoice_id": DAIRY.id}), Say("Paid.")
         )
+        after = ena.agent.tools.state()
         ena.chat("Is the flour paid?", Say("Yes, paid."))
-    assert cache.get("Pay the dairy invoice", FLOUR.issue_date) is None
-    assert cache.get("Is the flour paid?", FLOUR.issue_date) is None
+    assert cache.get("Pay the dairy invoice", FLOUR.issue_date, before) is None
+    assert cache.get("Is the flour paid?", FLOUR.issue_date, after) is None
     ena.store.close()
 
 
@@ -343,7 +366,7 @@ def test_the_cache_refuses_money_replies_and_empty_questions() -> None:
         explanation="test",
     )
     with pytest.raises(ValueError, match="never cached"):
-        ReplyCache(SEED).put("q", LEAN_WEEK, CachedReply(text="Paid.", cards=(receipt,)))
+        ReplyCache(SEED).put("q", LEAN_WEEK, "state", CachedReply(text="Paid.", cards=(receipt,)))
     with pytest.raises(ValueError, match="not a question"):
         normalize(" ?! ")
     assert normalize("  What's my BALANCE?? ") == "what's my balance"

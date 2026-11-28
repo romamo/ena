@@ -1,6 +1,8 @@
 """The reply cache for the demo questions (docs/build-plan.md §8, §11).
 
-A reply is cached under the seed, the business day and the question, so the stage run
+A reply is cached under the seed, the business day, the ledger's state (a digest of the
+receipts, the invoices' statuses and the booked card sales, so a payment or an approval
+earlier that day is never answered from before it) and the question, so the stage run
 answers the demo questions the same way every time, and still answers them when the
 model is slow or down. The question is compared case-insensitively, with runs of
 whitespace collapsed and trailing punctuation dropped.
@@ -38,6 +40,7 @@ class CachedReply(_Frozen):
 class _Entry(_Frozen):
     seed: Annotated[int, Field(strict=True)]
     day: dt.date
+    state: Annotated[str, StringConstraints(min_length=1)]
     question: Question
     reply: CachedReply
 
@@ -64,24 +67,26 @@ def cacheable(reply: CachedReply) -> bool:
 
 
 class ReplyCache:
-    """Replies by (seed, day, question), in memory and in `path` when given."""
+    """Replies by (seed, day, state, question), in memory and in `path` when given."""
 
     def __init__(self, seed: int, path: Path | None = None) -> None:
         self._seed = seed
         self._path = path
-        self._entries: dict[tuple[int, dt.date, str], _Entry] = {}
+        self._entries: dict[tuple[int, dt.date, str, str], _Entry] = {}
         if path is not None and path.exists():
             for entry in _ENTRIES.validate_json(path.read_bytes()):
-                self._entries[(entry.seed, entry.day, entry.question)] = entry
+                self._entries[(entry.seed, entry.day, entry.state, entry.question)] = entry
 
-    def get(self, question: str, day: dt.date) -> CachedReply | None:
-        entry = self._entries.get((self._seed, day, normalize(question)))
+    def get(self, question: str, day: dt.date, state: str) -> CachedReply | None:
+        entry = self._entries.get((self._seed, day, state, normalize(question)))
         return None if entry is None else entry.reply
 
-    def put(self, question: str, day: dt.date, reply: CachedReply) -> None:
+    def put(self, question: str, day: dt.date, state: str, reply: CachedReply) -> None:
         if not cacheable(reply):
             raise ValueError("a reply that moved money is never cached")
-        entry = _Entry(seed=self._seed, day=day, question=normalize(question), reply=reply)
-        self._entries[(entry.seed, entry.day, entry.question)] = entry
+        entry = _Entry(
+            seed=self._seed, day=day, state=state, question=normalize(question), reply=reply
+        )
+        self._entries[(entry.seed, entry.day, entry.state, entry.question)] = entry
         if self._path is not None:
             self._path.write_bytes(_ENTRIES.dump_json(list(self._entries.values()), indent=2))
