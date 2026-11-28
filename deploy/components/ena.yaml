@@ -3,7 +3,7 @@ apiVersion: cloudfall/v1
 kind: Component
 metadata:
   id: ena
-  description: ena-serve with the built chat page on one origin, the synthetic month as of 16 November
+  description: ena-serve with the built chat page on one origin, the synthetic month as of 16 November, paying through the bocAPI sandbox
 spec:
   application: ena
   repository:
@@ -42,9 +42,14 @@ spec:
       - web/dist
       - --store
       - /srv/apps/ena/web/shared/ena.db
+      - --bank
+      - boc
   environment:
     # the Claude CLI the agent SDK starts keeps its state under HOME
     HOME: /srv/apps/ena
+    # BoC sends the browser back here after a payment's confirmation; the same URI is set
+    # on the app in the sandbox portal. The BoC keys come from the deploy's env file
+    BOC_REDIRECT_URI: https://ena.cloudfall.dev/boc/consent
   healthCheck:
     type: http
     scheme: http
