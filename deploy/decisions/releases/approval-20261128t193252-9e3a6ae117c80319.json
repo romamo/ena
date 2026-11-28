@@ -1,0 +1,21 @@
+{
+  "apiVersion": "cloudfall/v1",
+  "kind": "ReleaseApproval",
+  "metadata": {
+    "id": "approval-20261128t193252-9e3a6ae117c80319"
+  },
+  "spec": {
+    "application": "ena",
+    "component": "ena",
+    "release": "20261128T193132Z-4fcd892",
+    "artifactSha256": "edc84ef3314b87ca3783c248b3db050a0c7d15c7ccf4f7d22a47c5e9cd09eb5d",
+    "gitCommit": "4fcd892c6242326946b1cde835c330302c763e36",
+    "servers": [
+      "ena-1"
+    ],
+    "approver": "roman",
+    "approvedAt": "2026-11-28T19:32:52Z",
+    "expiresAt": "2026-11-29T19:32:52Z",
+    "via": "terminal"
+  }
+}
