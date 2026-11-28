@@ -3,7 +3,7 @@ apiVersion: cloudfall/v1
 kind: Application
 metadata:
   id: ena
-  description: Ena, the BoC Fintech Hackathon 7.0 demo; payments are simulated, no money moves
+  description: Ena, the BoC Fintech Hackathon 7.0 demo; payments go through the bocAPI sandbox, no real money moves
 spec:
   linuxUser: ena
   approval: manual
