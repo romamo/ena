@@ -6,8 +6,14 @@ amount is a deposit.
 A payment matches a supplier invoice when all of these hold:
 
 - its absolute amount equals the invoice's `amount_cents`
-- its date is at most 7 days before or after the invoice's `due_date`
-- its reference contains the invoice number, or its counterparty matches the supplier
+- its reference contains the invoice number and it is dated from the invoice's
+  `issue_date` to 7 days after its `due_date`, or its counterparty matches the supplier
+  and it is dated at most 7 days before or after the `due_date`
+
+An invoice paid on arrival (the gate pays within the limit the day it comes, and the
+owner approves the rest) goes out before the 7 days ahead of its due date; its invoice
+number in the reference is what ties it to the invoice, so the window opens on the
+issue date for it. A payment by counterparty alone keeps the 7 days either side.
 
 A deposit matches a card sale when its reference contains the sale's `jcc_order_id`, or when
 its amount equals the sale's and it is dated 0 to 3 days after the sale (settlement delay).
@@ -43,7 +49,8 @@ from pydantic import BaseModel, ConfigDict
 from ena.models import CardSale, SupplierInvoice, Transaction
 
 INVOICE_WINDOW = dt.timedelta(days=7)
-"""How far a payment may be from the invoice's due date, either side, inclusive."""
+"""How far a payment may be from the invoice's due date, inclusive: either side by
+counterparty, after it by reference."""
 
 SETTLEMENT_WINDOW = dt.timedelta(days=3)
 """How long after a card sale its deposit may arrive, inclusive."""
@@ -130,10 +137,16 @@ def match_invoices(
     ordered = sorted(invoices, key=lambda invoice: (invoice.due_date, invoice.id))
 
     def reference(invoice: SupplierInvoice, tx: Transaction) -> bool:
-        return _payment_fits(invoice, tx) and _has_token(tx.reference, invoice.jinius_id)
+        on_time = invoice.issue_date <= tx.date <= invoice.due_date + INVOICE_WINDOW
+        return _pays_amount(invoice, tx) and on_time and _has_token(tx.reference, invoice.jinius_id)
 
     def counterparty(invoice: SupplierInvoice, tx: Transaction) -> bool:
-        return _payment_fits(invoice, tx) and _same_name(tx.counterparty, invoice.supplier_name)
+        near_due = abs(tx.date - invoice.due_date) <= INVOICE_WINDOW
+        return (
+            _pays_amount(invoice, tx)
+            and near_due
+            and _same_name(tx.counterparty, invoice.supplier_name)
+        )
 
     pairs = _match_passes(
         ordered,
@@ -206,12 +219,9 @@ def _match_passes[T: SupplierInvoice | CardSale](
     return pairs
 
 
-def _payment_fits(invoice: SupplierInvoice, tx: Transaction) -> bool:
-    """The amount and the date conditions of a payment for an invoice."""
-    return (
-        -tx.amount_cents == invoice.amount_cents
-        and abs(tx.date - invoice.due_date) <= INVOICE_WINDOW
-    )
+def _pays_amount(invoice: SupplierInvoice, tx: Transaction) -> bool:
+    """Whether a payment's amount is the invoice's."""
+    return -tx.amount_cents == invoice.amount_cents
 
 
 def _sorted_transactions(transactions: Sequence[Transaction]) -> list[Transaction]:
