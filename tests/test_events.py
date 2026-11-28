@@ -152,6 +152,14 @@ def test_costs_already_due_are_refused() -> None:
     assert on_the_day.basis["days_to_costs"] == 0
 
 
+def test_costs_already_paid_are_refused() -> None:
+    paid = WEDDING.model_copy(update={"costs_paid_date": TODAY - dt.timedelta(days=1)})
+    refusal = event_advance(paid, HISTORY, spare_cents=0, today=TODAY)
+    assert refusal == AdvanceRefusal(
+        event_id="georgiou", reason="the costs were already paid on 2026-11-27"
+    )
+
+
 def test_only_a_booked_event_gets_an_advance() -> None:
     refusal = event_advance(HISTORY[0], HISTORY, spare_cents=0, today=TODAY)
     assert refusal == AdvanceRefusal(event_id="past-0", reason="the event is completed, not booked")

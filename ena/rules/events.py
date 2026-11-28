@@ -19,8 +19,8 @@ The advance (`event_advance`) for a booked event:
     gap = the event's costs - its deposit - the spare cash the caller passes
 
 It is offered when the pattern exists, cancellations are at most 1 in 10
-(`MAX_CANCELLED_PER_10`), the costs are not yet due, the gap is above zero and the final
-payment can repay it. Its amount is the gap. It runs from the expected costs date (the
+(`MAX_CANCELLED_PER_10`), the costs are neither paid nor due yet, the gap is above zero
+and the final payment can repay it. Its amount is the gap. It runs from the expected costs date (the
 event date minus the most days before) to the expected final-payment date (the event date
 plus the most days after), at least 1 day, and is repaid from the final payment.
 Otherwise it returns a refusal with the reason. `simulated=True`: there is no lending API,
@@ -117,6 +117,8 @@ def event_advance(
         raise ValueError(f"spare_cents is never negative, got {spare_cents}")
     if event.status is not EventStatus.BOOKED:
         return _refuse(event, f"the event is {event.status}, not booked")
+    if event.costs_paid_date is not None:
+        return _refuse(event, f"the costs were already paid on {event.costs_paid_date}")
     pattern = event_pattern(events)
     if pattern is None:
         completed = sum(1 for e in events if e.status is EventStatus.COMPLETED)
