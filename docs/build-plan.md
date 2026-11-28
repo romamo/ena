@@ -345,7 +345,7 @@ docs/                  plan, hackathon, interviews, this file, jinius-notes, jcc
 - **Rules:** each function has tests with fixed inputs and exact expected outputs (Keith). Run on every pull request.
 - **Gate:** below limit pays; above limit creates an approval; approve pays once; decline never pays; duplicate trigger returns the same receipt.
 - **Connectors:** parse every saved fixture into the data model.
-- **Chat:** 10 owner questions with expected answers from the seed data (task 6.7).
+- **Chat:** 11 owner questions with expected answers from the seed data (task 6.7), the event advance among them.
 - **End to end:** the replay runs the whole month with no errors; run before every rehearsal.
 
 ---

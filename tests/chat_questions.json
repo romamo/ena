@@ -58,6 +58,20 @@
     "dont_know": false
   },
   {
+    "id": "event-advance",
+    "en": "Can I get an advance for the Georgiou wedding's costs?",
+    "el": "Μπορώ να πάρω προκαταβολή για τα έξοδα του γάμου Γεωργίου;",
+    "day": 16,
+    "paid_before": [],
+    "tools": [
+      {"tool": "get_event_pattern", "arguments": {}},
+      {"tool": "propose_event_advance", "arguments": {"event_id": "syn-event-0014"}}
+    ],
+    "figures": ["€2,800.00", "€6,000.00"],
+    "cards": ["offer"],
+    "dont_know": false
+  },
+  {
     "id": "unpaid-invoices",
     "en": "Which invoices are unpaid?",
     "el": "Ποια τιμολόγια είναι απλήρωτα;",

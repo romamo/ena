@@ -24,9 +24,11 @@ forecast, offers) and the receipts the gate returned for a payment asked this tu
 alone let a reply say "paid" (`ena/agent.py`); a receipt `list_receipts` only read does
 not. `build_server` puts them on an in-process MCP server for the Claude Agent SDK.
 
-Not here yet: `get_event_pattern` and `propose_event_advance` (the rule is in
-`ena/rules/events.py`, but the synthetic month has no events) and
-`create_pay_link` (the JCC connector has no register call).
+The event advance's spare cash is what the forecast keeps above its threshold (the
+instalment plus the buffer) up to the week the event's costs fall due: the lowest closing
+from this week to that one, less the threshold, and never below zero.
+
+Not here yet: `create_pay_link` (the JCC connector has no register call).
 """
 
 from __future__ import annotations
@@ -47,6 +49,8 @@ from ena.models import (
     ApprovalStatus,
     Card,
     CardSale,
+    Event,
+    EventStatus,
     Forecast,
     InvoiceStatus,
     IsoDate,
@@ -58,6 +62,7 @@ from ena.models import (
 )
 from ena.replay import TZ, DayStarted, ReplayEvent
 from ena.rules.books import Books, match_books, match_invoices
+from ena.rules.events import AdvanceRefusal, EventPattern, event_advance, event_pattern
 from ena.rules.forecast import CashForecast, ScheduledFlow, euros, forecast_cash
 from ena.rules.loan import loan_offer
 from ena.rules.reserve import reserve_offer
@@ -144,6 +149,16 @@ class Ledger:
             if invoice.id == invoice_id:
                 return invoice
         raise ToolError(f"no invoice {invoice_id!r} has arrived")
+
+    def events(self) -> list[Event]:
+        """The business's catering events: the past ones and those booked."""
+        return list(self._month.events)
+
+    def event(self, event_id: str) -> Event:
+        for event in self._month.events:
+            if event.id == event_id:
+                return event
+        raise ToolError(f"no event {event_id!r}")
 
     def state(self) -> str:
         """A digest of what the store has changed in the month: the receipts, the invoices'
@@ -356,6 +371,28 @@ class OfferResult(_Result):
     note: str
 
 
+class EventView(_Result):
+    id: str
+    customer: str
+    event_date: dt.date
+    price: str
+    deposit: str
+    costs: str
+    final_payment: str
+
+
+class EventPatternResult(_Result):
+    pattern: EventPattern | None
+    deposit_share: str | None
+    cost_share: str | None
+    costs_paid: str | None
+    """How many days before the event the costs were paid, fewest to most."""
+    final_payment_arrives: str | None
+    """How many days after the event the final payment arrived, fewest to most."""
+    booked: tuple[EventView, ...]
+    note: str
+
+
 # The tools
 
 
@@ -552,6 +589,105 @@ class EnaTools:
             note="Offer, simulated: a pre-filled Digital Business Loan, not a promise",
         )
 
+    def get_event_pattern(self) -> EventPatternResult:
+        events = self._ledger.events()
+        pattern = event_pattern(events)
+        booked = tuple(_event(e) for e in events if e.status is EventStatus.BOOKED)
+        if pattern is None:
+            completed = sum(1 for e in events if e.status is EventStatus.COMPLETED)
+            return EventPatternResult(
+                pattern=None,
+                deposit_share=None,
+                cost_share=None,
+                costs_paid=None,
+                final_payment_arrives=None,
+                booked=booked,
+                note=f"Fewer than 10 completed events ({completed}): no pattern yet",
+            )
+        return EventPatternResult(
+            pattern=pattern,
+            deposit_share=_percent(pattern.deposit_share_bp),
+            cost_share=_percent(pattern.cost_share_bp),
+            costs_paid=(
+                f"{pattern.costs_days_before_min} to {pattern.costs_days_before_max} days"
+                " before the event"
+            ),
+            final_payment_arrives=(
+                f"{pattern.final_days_after_min} to {pattern.final_days_after_max} days"
+                " after the event"
+            ),
+            booked=booked,
+            note=(f"From {pattern.completed} completed events; {pattern.cancelled} cancelled"),
+        )
+
+    def propose_event_advance(self, event_id: str) -> OfferResult:
+        """The event advance rule's simulated offer, with a receipt that Ena offered it."""
+        event = self._ledger.event(event_id)
+        events = self._ledger.events()
+        today = self._ledger.today()
+        spare = 0
+        pattern = event_pattern(events)
+        if pattern is not None:
+            costs_date = event.event_date - dt.timedelta(days=pattern.costs_days_before_max)
+            spare = _spare_cents(self._ledger.cash_forecast(), costs_date)
+        outcome = event_advance(event, events, spare_cents=spare, today=today)
+        if isinstance(outcome, AdvanceRefusal):
+            return OfferResult(offer=None, amount=None, note=f"No advance: {outcome.reason}")
+        self._turn.cards.append(outcome)
+        if self._store.receipt_for(outcome.id) is None:
+            self._store.add_receipt(
+                Receipt(
+                    id=f"receipt-{outcome.id}",
+                    at=self._clock(),
+                    actor=Actor.ENA,
+                    action="Offer a short-term event advance (simulated)",
+                    amount_cents=outcome.amount_cents,
+                    ref=outcome.id,
+                    result="offered",
+                    explanation=(
+                        f"Offer, simulated: {euros(outcome.amount_cents)} for"
+                        f" {outcome.term_days} days against {event.customer}, repaid from its"
+                        f" {euros(event.final_payment_cents)} final payment; not an"
+                        " application and not a promise"
+                    ),
+                )
+            )
+        return OfferResult(
+            offer=outcome,
+            amount=euros(outcome.amount_cents),
+            note=(
+                f"Offer, simulated: {euros(outcome.amount_cents)} for {outcome.term_days} days"
+                f" to cover the costs of {event.customer} before its"
+                f" {euros(event.final_payment_cents)} final payment arrives; spare cash"
+                f" {euros(spare)}; not a promise"
+            ),
+        )
+
+
+def _spare_cents(cash: CashForecast, costs_date: dt.date) -> int:
+    """What the forecast keeps above its threshold up to the week the costs fall due."""
+    weeks = [w for w in cash.forecast.weeks if w.week_start <= costs_date] or [
+        cash.forecast.weeks[0]
+    ]
+    return max(0, min(w.closing_cents for w in weeks) - cash.threshold_cents)
+
+
+def _percent(basis_points: int) -> str:
+    whole, part = divmod(basis_points, 100)
+    return f"{whole}.{part:02d}%"
+
+
+def _event(event: Event) -> EventView:
+    return EventView(
+        id=event.id,
+        customer=event.customer,
+        event_date=event.event_date,
+        price=euros(event.price_cents),
+        deposit=euros(event.deposit_cents),
+        costs=euros(event.costs_cents),
+        final_payment=euros(event.final_payment_cents),
+    )
+
 
 def _date(value: str, name: str) -> dt.date:
     try:
@@ -687,6 +823,27 @@ TOOLS: tuple[ToolSpec, ...] = (
         _NO_ARGS,
         _MONEY,
         lambda t, _: t.propose_loan(),
+    ),
+    ToolSpec(
+        "get_event_pattern",
+        "How the business's past catering events went (deposit and cost shares, when costs"
+        " and final payments fell), and the events booked now.",
+        _NO_ARGS,
+        _READ,
+        lambda t, _: t.get_event_pattern(),
+    ),
+    ToolSpec(
+        "propose_event_advance",
+        "A simulated short-term advance for a booked event's costs before its final payment"
+        " arrives, or why there is none.",
+        {
+            "type": "object",
+            "properties": {"event_id": {"type": "string", "minLength": 1}},
+            "required": ["event_id"],
+            "additionalProperties": False,
+        },
+        _MONEY,
+        lambda t, a: t.propose_event_advance(a["event_id"]),
     ),
 )
 
