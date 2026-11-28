@@ -13,6 +13,8 @@ The app the demo runs, built from `.env` as each module reads it:
   completes every payment: the gate is not wired to bocAPI yet, so a payment is simulated
 - The chat agent (`ena/agent.py`, `ENA_*`) and the reply cache, in memory or in `--cache`
 - The JCC client (`JCC_*`) for `POST /jcc/callback`
+- The built chat page (`--web web/dist`, from `npm run build`) on the same origin, for a
+  host with no Vite dev server in front; `GET /health` answers 200 for the host's checks
 
 Without `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`) in the environment the server
 still starts, and `/chat` answers with an error event that names the missing key. The
@@ -38,6 +40,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -88,11 +91,15 @@ class ServeSettings(BaseModel):
     """None when JCC is not configured: the callback route refuses every call."""
     model_credential: bool
     """Whether the environment holds a credential for the model."""
+    web: Path | None = None
+    """The built chat page to serve at `/`, or None when Vite serves it."""
 
     @model_validator(mode="after")
     def _day_in_month(self) -> Self:
         if not FIRST_DAY <= self.day <= LAST_DAY:
             raise ValueError(f"the day must be from {FIRST_DAY} to {LAST_DAY}, got {self.day}")
+        if self.web is not None and not (self.web / "index.html").is_file():
+            raise ValueError(f"the web folder {self.web} has no index.html: run npm run build")
         return self
 
 
@@ -211,6 +218,14 @@ def build(
     )
     if settings.jcc is None:
         _refuse_callbacks(app)
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    if settings.web is not None:
+        # mounted last, so every API route above wins over a file of the same path
+        app.mount("/", StaticFiles(directory=settings.web, html=True), name="web")
     return Server(app, store, http)
 
 
@@ -241,6 +256,9 @@ def parser() -> argparse.ArgumentParser:
     where.add_argument("--store", type=Path, default=DEFAULT_STORE, help=f"default {DEFAULT_STORE}")
     where.add_argument("--memory", action="store_true", help="keep the store in memory")
     p.add_argument("--cache", type=Path, default=None, help="the reply cache's JSON file")
+    p.add_argument(
+        "--web", type=Path, default=None, help="serve the built chat page from this folder"
+    )
     return p
 
 
@@ -256,6 +274,7 @@ def load_settings(
             agent=AgentSettings(_env_file=env_file),
             jcc=load_jcc(env_file),
             model_credential=has_model_credential(environ),
+            web=args.web,
         )
     except ValidationError as error:
         problems = "; ".join(
