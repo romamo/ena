@@ -22,6 +22,8 @@ The synthetic month ([ena/seed.py](ena/seed.py)) is a bakery's November 2026 bui
 
 The owner sees all of it in one chat page ([web/](web/)): Ena's replies stream in with the approval, receipt, forecast and offer cards, and the owner approves or declines a payment above the limit with one tap.
 
+The demo is hosted at https://ena.cloudfall.dev: the synthetic month as of 16 November, payments simulated, the page open to anyone with the address. [deploy/](deploy/README.md) declares its server and deploys a new release.
+
 ## Run the demo
 
 Needs only [uv](https://docs.astral.sh/uv/getting-started/installation/) and the sample data in this repository: no credentials and no `.env`. uv installs the Python version the project pins (3.15) if it is missing.
