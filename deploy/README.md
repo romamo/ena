@@ -4,7 +4,7 @@ A [Cloudfall][cloudfall] project for Ena's hosted demo at https://ena.cloudfall.
 
 The page is open: anyone with the address can chat and approve payments, and every question spends the Anthropic key on the server. Payments are simulated (the stand-in bank completes each one and no money moves).
 
-All visitors share one store, `/srv/apps/ena/web/shared/ena.db`: one visitor's approved payments and chat history are what the next visitor sees, and nothing resets it between them. To start over from the synthetic month, a person stops the service, removes the store, and starts it again (`ena-serve` creates an empty store on start, and the month comes from the seed). Cloudfall has no stop command, so this is the one step run over SSH by hand, and only by a person:
+All visitors share one store, `/srv/apps/ena/web/shared/ena.db`: one visitor's approvals, receipts and bank consent are what the next visitor sees, and nothing resets it between them (the agent's conversation is shared too, kept by the running service until it restarts). To start over from the synthetic month, a person stops the service, removes the store, and starts it again (`ena-serve` creates an empty store on start, and the month comes from the seed). Cloudfall has no stop command, so this is the one step run over SSH by hand, and only by a person:
 
 ```bash
 ssh root@116.203.140.114 'systemctl stop ena && rm /srv/apps/ena/web/shared/ena.db && systemctl start ena'
@@ -58,7 +58,7 @@ uv run cloudfall-engine playbook run baseline --inventory tmp/ansible-inventory.
 uv run cloudfall-engine playbook run baseline --inventory tmp/ansible-inventory.json --limit ena-1 --extra-vars @firewall/cloudflare-origin.json
 ```
 
-Every later baseline run must pass the same `--extra-vars`, or it reopens 80 and 443 to everyone. When Cloudflare changes its ranges, regenerate the file from https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6.
+Every later baseline run must be this `playbook run` with the same `--extra-vars`, or it reopens 80 and 443 to everyone: `cloudfall baseline converge` takes no extra vars, so it reopens them. The declared baseline still allows every source, so `cloudfall audit` reports `firewall.allowedInbound` as drift on ena-1; that drift is this file, not a fault to converge away. When Cloudflare changes its ranges, regenerate the file from https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6.
 
 ## How ena-1 was set up
 
