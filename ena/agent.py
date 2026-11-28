@@ -246,8 +246,8 @@ class Chat:
         if not message.strip():
             raise ValueError("the message is empty")
         async with self._lock:
-            day = self._today()
-            hit = None if self._cache is None else self._cache.get(message, day)
+            day, state = self._today(), self._tools.state()
+            hit = None if self._cache is None else self._cache.get(message, day, state)
             if hit is not None:
                 for card in hit.cards:
                     yield card_event(card)
@@ -283,7 +283,7 @@ class Chat:
             yield DoneEvent(text=reply, unconfirmed=marked, cached=False)
             cached = CachedReply(text=reply, cards=tuple(turn.cards))
             if self._cache is not None and not marked and cacheable(cached):
-                self._cache.put(message, day, cached)
+                self._cache.put(message, day, state, cached)
 
     def _new_cards(self, sent: _Sent) -> list[CardEvent]:
         cards = self._tools.current_turn().cards[sent.cards :]
