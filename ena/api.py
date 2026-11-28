@@ -1,4 +1,16 @@
-"""Ena's HTTP API (docs/build-plan.md §5): the JCC callback that books a card sale.
+"""Ena's HTTP API (docs/build-plan.md §3, §5, §8): the chat, the owner's taps, the JCC callback.
+
+The API is thin: the chat turn is `ena.agent.Chat`, money is the gate's.
+
+`POST /chat` takes the owner's message (`{"text": ...}`) and streams the turn over SSE,
+one event per `ena.agent.ChatEvent`, named by its `kind`: `card` (an approval, a receipt,
+the forecast, an offer), `text` (a piece of the reply), then `done` (the whole reply) or
+`error` ("try again", with no detail of the failure).
+
+`POST /approvals/{id}/approve` and `POST /approvals/{id}/decline` are the owner's tap on
+an approval card. They call the gate's approval path directly, never the agent, and
+answer with the receipt card; an unknown or already decided approval is refused with
+409. No tool can reach these: approval comes only from the owner (§5).
 
 `POST /jcc/callback` takes JCC's form-encoded webhook (docs/jcc-notes.md §0, §7 step 4):
 
@@ -15,12 +27,15 @@ The callback secret never appears in an answer.
 
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import AsyncIterator
+from typing import Annotated, Literal
 from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+from pydantic import BaseModel, ConfigDict, SecretStr, StringConstraints, ValidationError
 
+from ena.agent import CardEvent, Chat, card_event
 from ena.connectors.jcc import (
     Callback,
     ChecksumError,
@@ -31,9 +46,13 @@ from ena.connectors.jcc import (
     confirm_deposit,
     verify_checksum,
 )
+from ena.gate import Gate, GateError
 from ena.store import Store
 
 FORM = "application/x-www-form-urlencoded"
+
+MAX_MESSAGE = 2_000
+"""The longest owner message, in characters."""
 
 
 class CallbackAnswer(BaseModel):
@@ -43,12 +62,55 @@ class CallbackAnswer(BaseModel):
     jcc_order_id: str
 
 
-def create_app(store: Store, jcc: JccClient, callback_secret: SecretStr) -> FastAPI:
-    """The API, booking into `store` and confirming deposits through `jcc`."""
+class ChatRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    text: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_MESSAGE)
+    ]
+
+
+def create_app(
+    store: Store,
+    jcc: JccClient,
+    callback_secret: SecretStr,
+    *,
+    chat: Chat | None = None,
+    gate: Gate | None = None,
+) -> FastAPI:
+    """The API, booking into `store` and confirming deposits through `jcc`.
+
+    With `chat` it serves `POST /chat`; with `gate`, the owner's approve and decline.
+    """
     if not callback_secret.get_secret_value():
         # An empty key would accept any callback signed with HMAC-SHA256 keyed with b""
         raise ValueError("the JCC callback secret must not be empty")
     app = FastAPI(title="Ena")
+
+    if chat is not None:
+        chat_turn = chat
+
+        @app.post("/chat", response_class=EventSourceResponse)
+        async def send(request: ChatRequest) -> AsyncIterator[ServerSentEvent]:
+            async for event in chat_turn.send(request.text):
+                yield ServerSentEvent(data=event.model_dump(mode="json"), event=event.kind)
+
+    if gate is not None:
+        owner_gate = gate
+
+        @app.post("/approvals/{approval_id}/approve")
+        async def approve(approval_id: str) -> CardEvent:
+            try:
+                return card_event(owner_gate.approve(approval_id))
+            except GateError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+        @app.post("/approvals/{approval_id}/decline")
+        async def decline(approval_id: str) -> CardEvent:
+            try:
+                return card_event(owner_gate.decline(approval_id))
+            except GateError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.post("/jcc/callback")
     async def jcc_callback(request: Request) -> CallbackAnswer:
