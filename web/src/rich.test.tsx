@@ -24,6 +24,11 @@ describe("rich", () => {
     expect(html("**x**")).toBe("<strong>x</strong>");
   });
 
+  it("ends a one-character run at its own closing mark", () => {
+    expect(html("**3** invoices, **2** overdue")).toBe("<strong>3</strong> invoices, <strong>2</strong> overdue");
+    expect(html("**a**b**c**")).toBe("<strong>a</strong>b<strong>c</strong>");
+  });
+
   it("never renders the text as HTML", () => {
     expect(html("**<img src=x>**")).toBe("<strong>&lt;img src=x&gt;</strong>");
   });
