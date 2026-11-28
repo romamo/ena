@@ -120,7 +120,7 @@ One module (`ena/models.py`), written first by Roman (task 0.4). Amounts in euro
 | CardSale | id, amountCents, date, jccOrderId, status | From JCC callback |
 | Loan | id, instalmentCents, nextDueDate | Existing loan; read-only, never modified |
 | Forecast | weeks[]: {weekStart, openingCents, inCents, outCents, closingCents}, leanWeek, reason | Output of rules |
-| Event | id, customer, eventDate, priceCents, depositCents, costsCents, finalPaymentCents, status (booked / completed / cancelled) | For the event advance |
+| Event | id, customer, eventDate, priceCents, depositCents, costsCents, finalPaymentCents, status (booked / completed / cancelled), costsPaidDate, finalPaidDate | For the event advance; deposit + final payment = price; a completed event has both dates |
 | Offer | id, kind (reserve / loan / event_advance), amountCents, termDays, basis (numbers used), simulated | Output of rules |
 | ApprovalRequest | id, action, amountCents, reason, status (pending / approved / declined), createdAt, decidedAt | Created by the gate |
 | Receipt | id, at, actor (ena / owner), action, amountCents, ref (invoice, payment, offer), result, explanation | Append-only |

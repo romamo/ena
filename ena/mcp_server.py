@@ -24,7 +24,8 @@ forecast, offers) and the receipts the gate returned for a payment asked this tu
 alone let a reply say "paid" (`ena/agent.py`); a receipt `list_receipts` only read does
 not. `build_server` puts them on an in-process MCP server for the Claude Agent SDK.
 
-Not here yet: `get_event_pattern` and `propose_event_advance` (no event rule exists) and
+Not here yet: `get_event_pattern` and `propose_event_advance` (the rule is in
+`ena/rules/events.py`, but the synthetic month has no events) and
 `create_pay_link` (the JCC connector has no register call).
 """
 

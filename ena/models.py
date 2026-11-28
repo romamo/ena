@@ -192,6 +192,24 @@ class Event(_Entity):
     costs_cents: NonNegativeCents
     final_payment_cents: NonNegativeCents
     status: EventStatus
+    costs_paid_date: IsoDate | None = None
+    """When the event's costs were paid; set on a completed event."""
+    final_paid_date: IsoDate | None = None
+    """When the final payment arrived; set on a completed event, and only there."""
+
+    @model_validator(mode="after")
+    def _payments_add_up(self) -> Self:
+        if self.deposit_cents + self.final_payment_cents != self.price_cents:
+            raise ValueError(
+                f"deposit_cents {self.deposit_cents} + final_payment_cents"
+                f" {self.final_payment_cents} != price_cents {self.price_cents}"
+            )
+        completed = self.status is EventStatus.COMPLETED
+        if completed and (self.costs_paid_date is None or self.final_paid_date is None):
+            raise ValueError("a completed event has costs_paid_date and final_paid_date")
+        if not completed and self.final_paid_date is not None:
+            raise ValueError(f"a {self.status} event has no final_paid_date")
+        return self
 
 
 class Offer(_Entity):
