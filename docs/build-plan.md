@@ -476,4 +476,4 @@ Checkpoints:
 4. Demo business: bakery, or a caterer that also shows the event advance?
 5. Event advance: Must or Should? Cancellation limit for eligibility?
 6. Ask the BoC lending mentor: is the event advance a new product or a use of the Digital Business Loan?
-7. Is the Q&A inside the 4 pitch minutes? (The demo is, 2026-11-28)
+7. ~~Is the Q&A inside the 4 pitch minutes?~~ No: the 4 minutes include the demo, the Q&A is separate (2026-11-28)
