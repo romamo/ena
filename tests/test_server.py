@@ -143,6 +143,17 @@ def test_with_jcc_settings_the_callback_checks_its_checksum() -> None:
     assert answer.status_code == 403
 
 
+def test_the_dashboard_reads_the_month_as_of_the_day(
+    served: tuple[Server, TestClient, Agents],
+) -> None:
+    _, http, _ = served
+    overview = http.get("/dashboard/overview")
+    assert overview.status_code == 200
+    assert overview.json()["as_of"] == DEFAULT_DAY.isoformat()
+    for route in ("receipts", "forecast", "credit"):
+        assert http.get(f"/dashboard/{route}").status_code == 200
+
+
 def test_the_owner_taps_reach_the_gate(served: tuple[Server, TestClient, Agents]) -> None:
     _, http, _ = served
     assert http.post("/approvals/approval-nope/approve").status_code == 409

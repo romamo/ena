@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, sendChat, type CardEvent, type ChatEvent } from "./api";
 import { Card, FetchContext } from "./cards";
+import { Dashboard } from "./Dashboard";
 
 // The demo questions of tests/chat_questions.json the chips offer
 export const SUGGESTIONS = [
@@ -46,6 +47,7 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<"chat" | "dashboard">("chat");
   const nextId = useRef(0);
   const end = useRef<HTMLDivElement>(null);
 
@@ -99,13 +101,23 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
             <h1>Ena</h1>
             <p className="muted small">Your back-office assistant</p>
           </div>
-          <span className="label">demo</span>
+          <div className="top-actions">
+            <span className="label">demo</span>
+            <button
+              type="button"
+              className="switch"
+              onClick={() => setView(view === "chat" ? "dashboard" : "chat")}
+            >
+              {view === "chat" ? "Dashboard" : "Back to chat"}
+            </button>
+          </div>
         </header>
         <p className="banner" role="note">
           Synthetic demo: the bakery, its bank data and invoices are made up, and payments are
           simulated. No money moves.
         </p>
-        <main className="messages" aria-live="polite">
+        <Dashboard open={view === "dashboard"} />
+        <main className="messages" aria-live="polite" hidden={view !== "chat"}>
           {messages.length === 0 ? (
             <p className="muted empty">Ask about your cash, invoices and payments.</p>
           ) : null}
@@ -138,7 +150,7 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
           )}
           <div ref={end} />
         </main>
-        <footer className="composer">
+        <footer className="composer" hidden={view !== "chat"}>
           <div className="chips" aria-label="Suggested questions">
             {SUGGESTIONS.map((suggestion) => (
               <button

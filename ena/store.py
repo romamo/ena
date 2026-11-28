@@ -140,6 +140,14 @@ class Store:
             return None
         return StoredApproval(ApprovalRequest.model_validate_json(row[0]), row[1])
 
+    def pending_approvals(self) -> list[ApprovalRequest]:
+        """Every approval request still pending, oldest first."""
+        rows = self._db.execute(
+            "SELECT body FROM approvals WHERE status = ? ORDER BY rowid",
+            (ApprovalStatus.PENDING.value,),
+        ).fetchall()
+        return [ApprovalRequest.model_validate_json(body) for (body,) in rows]
+
     def pending_approval_for(self, ref: str) -> ApprovalRequest | None:
         row = self._db.execute(
             "SELECT body FROM approvals WHERE ref = ? AND status = ?",

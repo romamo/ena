@@ -1,5 +1,5 @@
 // Card events as the API sends them for the synthetic month on 16 November (ena/seed.py)
-import type { CardEvent } from "./api";
+import type { CardEvent, Credit, Overview, Receipts } from "./api";
 
 export const APPROVAL: CardEvent = {
   kind: "card",
@@ -72,6 +72,52 @@ export const DECLINED: CardEvent = {
     simulated: false,
   },
 };
+
+// The dashboard's answers for the same day (ena/dashboard.py), the flour invoice pending
+
+export const OVERVIEW: Overview = {
+  as_of: "2026-11-16",
+  business: "Andreou Bakery (synthetic)",
+  synthetic: true,
+  limit_cents: 50000,
+  balance_cents: 266919,
+  pending: [APPROVAL.card_kind === "approval" ? APPROVAL.card : never()],
+  paid_on_its_own: 1,
+  paid_on_its_own_cents: 18000,
+  stepped_in: 0,
+  paid_out_cents: 18000,
+  unpaid_invoices: 1,
+  unpaid_cents: 124000,
+  lean_week: "2026-11-16",
+  lean_week_closing_cents: 34969,
+};
+
+export const RECEIPTS: Receipts = {
+  receipts: [RECEIPT.card_kind === "receipt" ? RECEIPT.card : never()],
+};
+
+export const CREDIT: Credit = {
+  verdict: "loan_needed",
+  lean_week: "2026-11-16",
+  lean_week_closing_cents: 34969,
+  threshold_cents: 95000,
+  gap_cents: 60031,
+  instalment_cents: 40000,
+  instalment_due: "2026-11-25",
+  reserve: {
+    id: "reserve-20261125",
+    kind: "reserve",
+    amount_cents: 40000,
+    term_days: 10,
+    basis: { instalment_cents: 40000 },
+    simulated: false,
+  },
+  loan: LOAN.card_kind === "offer" ? LOAN.card : never(),
+};
+
+function never(): never {
+  throw new Error("a fixture has the wrong card kind");
+}
 
 /** An SSE body as `POST /chat` streams it: one event per block, named by its kind. */
 export function sse(...events: object[]): string {
