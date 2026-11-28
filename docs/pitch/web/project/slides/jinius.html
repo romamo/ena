@@ -1,0 +1,24 @@
+<section id="jinius" data-transition="fade">
+<p class="eyebrow">BACKUP</p>
+<h2>How Ena uses Jinius</h2>
+<div class="jflow">
+<div class="jbox"><p class="k">Supplier</p><p class="v">Ena Flour Mill Ltd sends the invoice on Jinius</p></div>
+<x-connector head="end" class="jconn"></x-connector>
+<div class="jbox"><p class="k">Read</p><p class="v">GET /v3/invoices/payable</p></div>
+<x-connector head="end" class="jconn"></x-connector>
+<div class="jbox decide"><p class="k">Decide</p><p class="v">The gate: pay, or ask the owner</p></div>
+<x-connector head="end" class="jconn"></x-connector>
+<div class="jbox"><p class="k">Pay</p><p class="v">From the BoC account, through bocAPI</p></div>
+<x-connector head="end" class="jconn"></x-connector>
+<div class="jbox"><p class="k">Report back</p><p class="v">POST approve, then markAsPaid with the bank’s reference</p></div>
+</div>
+<div class="facts">
+<div class="fact"><p class="tag live">Live</p><p class="v">Two companies on the Jinius integration environment: the bakery as buyer, and a supplier we registered, approved by Jinius. Its €180 and €1,240 invoices and a €119 credit note, read through the API.</p></div>
+<div class="fact"><p class="tag built">Built and tested</p><p class="v">Approve and markAsPaid, to the Jinius API 3.0 specification. When Jinius is offline, Ena reads its saved responses.</p></div>
+<div class="fact"><p class="tag next">Next</p><p class="v">Jinius callbacks instead of polling, and paying through Jinius’s own Pay Others with 1bank.</p></div>
+</div>
+<aside>Backup: show it if asked about Jinius, invoices or integrations.
+“Jinius is where the invoice starts. We run two companies on the Jinius integration environment: the bakery as buyer, and a supplier we registered ourselves, Ena Flour Mill, which Jinius approved. That supplier sent the 180 and 1,240 euro invoices you saw, and a credit note.”
+“Ena reads them live from the Jinius API. Approving the invoice and marking it paid, with the bank’s payment reference, are built and tested against the Jinius specification. Next: Jinius callbacks instead of polling, and paying through Jinius’s own Pay Others with 1bank.”
+Be exact: reading invoices is live; approve and markAsPaid are built and tested, not yet called live.</aside>
+</section>

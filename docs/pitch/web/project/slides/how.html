@@ -1,0 +1,22 @@
+<section id="how" data-transition="fade">
+<h2 class="in">How it works</h2>
+<div class="flow in2">
+<div class="ocol"><x-shape kind="ellipse" class="head"></x-shape><div class="body"></div><p class="olabel">Owner</p><p class="osub">sets the limit</p></div>
+<x-connector head="both" class="hconn-o"></x-connector>
+<div class="fcol"><p class="pill">Jinius</p><x-connector head="end" class="vconn"></x-connector><div class="feat"><h3>Invoices</h3><p class="d">pays within the limit</p></div><x-connector head="both" class="vconn2"></x-connector></div>
+<x-connector head="end" class="hconn"></x-connector>
+<div class="fcol"><p class="pill">JCC</p><x-connector head="end" class="vconn"></x-connector><div class="feat"><h3>Books</h3><p class="d">matches every line</p></div><x-connector head="both" class="vconn2"></x-connector></div>
+<x-connector head="end" class="hconn"></x-connector>
+<div class="fcol"><div class="pill-gap"></div><div style="height:40px"></div><div class="feat"><h3>Cash forecast</h3><p class="d">8 weeks ahead</p></div><x-connector head="both" class="vconn2"></x-connector></div>
+<x-connector head="end" class="hconn"></x-connector>
+<div class="fcol"><div class="pill-gap"></div><div style="height:40px"></div><div class="feat"><h3>Loans</h3><p class="d">reserve, or a loan offer</p></div><p class="sim">simulated: no lending API</p></div>
+<x-connector head="end" class="hconn"></x-connector>
+<div class="outcome"><p class="t">Paid, booked,<br>covered</p><p class="d">a receipt for each</p></div>
+</div>
+<div class="bar in2"><p><b>BoC’s API (bocAPI)</b>   balance, statement, payments</p></div>
+<div class="gate in3"><p><b>The gate.</b> Below the owner’s limit Ena acts on its own. Above it, Ena asks. Every action leaves a receipt. Code decides every amount; the AI explains.</p></div>
+<aside>0:47 to 1:17. Scores: Technology / Integration (three real APIs), Innovation (the gate).
+“Here’s how. A supplier sends an invoice on Jinius. Ena reads it from the Jinius API, pays it from the owner’s account through bocAPI, and reports it back to Jinius as paid.”
+“JCC card sales keep the books matched, and Ena forecasts eight weeks of cash. Before a lean month it sets money aside for the loan instalment, or prepares a loan offer. That part is simulated: the sandbox has no lending API.”
+“The owner’s limit is the rule. Below it, Ena acts on its own. Above it, Ena asks. Every action leaves a receipt.”</aside>
+</section>
