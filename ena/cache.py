@@ -20,7 +20,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter
 
-from ena.models import ApprovalRequest, Card, Receipt
+from ena.models import ApprovalRequest, Card, Offer, OfferKind, Receipt
 
 
 class _Frozen(BaseModel):
@@ -54,8 +54,13 @@ def normalize(question: str) -> str:
 
 
 def cacheable(reply: CachedReply) -> bool:
-    """Whether a reply may be cached: it shows no approval and no receipt."""
-    return not any(isinstance(card, (ApprovalRequest, Receipt)) for card in reply.cards)
+    """Whether a reply may be cached: it shows no approval, no receipt, and no offer that
+    writes a receipt (the loan, the event advance), since a replay writes none."""
+    return not any(
+        isinstance(card, (ApprovalRequest, Receipt))
+        or (isinstance(card, Offer) and card.kind is not OfferKind.RESERVE)
+        for card in reply.cards
+    )
 
 
 class ReplyCache:

@@ -305,6 +305,19 @@ def test_a_read_only_reply_is_cached_by_question_and_day(tmp_path: Path) -> None
     ena.store.close()
 
 
+def test_a_loan_offer_is_not_cached_so_the_stage_run_writes_its_receipt(tmp_path: Path) -> None:
+    path = tmp_path / "replies.json"
+    rehearsal, http = build(LEAN_WEEK, ReplyCache(SEED, path))
+    with http:
+        rehearsal.chat("Can I get a loan?", Call("propose_loan"), Say("Offer, simulated."))
+    rehearsal.store.close()
+    stage, http = build(LEAN_WEEK, ReplyCache(SEED, path))
+    with http:
+        stage.chat("Can I get a loan?", Call("propose_loan"), Say("Offer, simulated."))
+        assert [receipt.result for receipt in stage.store.receipts()] == ["offered"]
+    stage.store.close()
+
+
 def test_a_reply_that_moved_money_or_was_marked_is_not_cached(tmp_path: Path) -> None:
     cache = ReplyCache(SEED)
     ena, http = build(FLOUR.issue_date, cache)
