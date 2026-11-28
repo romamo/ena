@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ena pitch deck</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=Inter:wght@400;600&display=swap">
+<style>
+* { margin: 0 }
+body { font: 32px/1.2 sans-serif; background: #8A8F8E; padding: 32px; zoom: 0.5 }
+body > section { width: 1920px; height: 1080px; overflow: hidden; box-sizing: border-box; position: relative; isolation: isolate }
+h1 { font-size: 96px; font-weight: 600 } h2 { font-size: 64px; font-weight: 600 } h3 { font-size: 44px; font-weight: 600 }
+.notes { width: 1920px; box-sizing: border-box; background: #F6F4EF; color: #16201F; font: 30px/1.45 Inter, Arial, sans-serif; padding: 32px 48px; margin: 0 0 64px 0; border-top: 4px solid #0F6E6E }
+.notes b { color: #0F6E6E }
+</style>
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+<section id="cover" class="cover" data-transition="fade">
+<div class="text">
+<p class="eyebrow">BOC FINTECH HACKATHON 7.0</p>
+<h1>“Pay the flour supplier €1,240?”</h1>
+<p class="sub">It’s above her €500 limit, so Ena asks. This is the only thing a bakery owner did today. Ena did the rest.</p>
+<p class="brand">Ena</p>
+<p class="brand-sub">One agent for your whole back office</p>
+</div>
+<img class="phone" src="../mockups/1-approval.svg" alt="Ena’s approval card on a phone: pay Mesaoria Mills €1,240, above the €500 limit, with Approve and Not now">
+</section>
+<div class="notes"><b>Speaker notes.</b> Open on the phone. “Pay the flour supplier €1,240? It’s above her €500 limit.” Pause. “This is the only thing a bakery owner did today. Ena did the rest.” Ena means “one” in Greek: one agent for the whole back office. We close on this same card, when she taps Approve and the receipt appears. The amounts come from our synthetic bakery month; swap them for the interview numbers if they differ.</div>
+<section id="problem" class="problem" data-transition="fade">
+<div class="text">
+<p class="eyebrow">THE PROBLEM</p>
+<h2>A bakery has no back office. The owner is the back office.</h2>
+<div class="pains">
+<div class="pain"><p class="k">Invoices</p><p class="v">Paid one by one from a phone, between customers</p></div>
+<div class="pain"><p class="k">Books</p><p class="v">Done at night, or paid to an accountant: [€__] a month</p></div>
+<div class="pain"><p class="k">Cash</p><p class="v">Found short when a payment bounces, not weeks before</p></div>
+<div class="pain"><p class="k">Their time</p><p class="v">[__] hours a month on paperwork, by the owners we interviewed</p></div>
+</div>
+</div>
+<div class="stat">
+<p class="big">3.6%</p>
+<p class="cap">of loans to small and medium businesses in Cyprus are non-performing: more than twice the 1.6% of the whole sector.</p>
+<p class="cap">Most of them didn’t fail. They ran out of cash for a month.</p>
+<p class="src">Central Bank of Cyprus, 2026 [check the month]</p>
+</div>
+</section>
+<div class="notes"><b>Speaker notes.</b> The owners we talked to: [name the businesses: a bakery, a photo studio, a barber]. One quote here if we have a good one: [“…”]. Fill the two bracketed numbers from the interviews (questions 2 and 4): what the books cost and the hours a month. Then the bank’s number: 3.6% against 1.6%. Check the Central Bank figure and its month before going on stage.</div>
+<section id="loop" class="loop" data-transition="fade">
+<p class="eyebrow">HOW ENA WORKS</p>
+<h2>One loop on the owner’s Bank of Cyprus account</h2>
+<div class="loop-row">
+<div class="steps">
+<div class="step"><p class="n">1</p><div class="body"><h3>Pays supplier invoices</h3><p class="what">Reads them from Jinius, pays from the account through bocAPI</p></div></div>
+<div class="step"><p class="n">2</p><div class="body"><h3>Keeps the books</h3><p class="what">Matches the bocAPI statement to invoices and JCC card sales</p></div></div>
+<div class="step"><p class="n">3</p><div class="body"><h3>Forecasts cash</h3><p class="what">Eight weeks ahead, and flags the first lean week</p></div></div>
+<div class="step"><p class="n">4</p><div class="body"><h3>Offers credit early</h3><p class="what">Sets money aside for the loan instalment, or pre-fills a Digital Business Loan (simulated: the sandbox has no lending API)</p></div></div>
+<div class="gate"><p class="t">The gate: the owner sets the limit</p><p class="d">Below it Ena pays on its own. Above it Ena asks. Every action leaves a receipt.</p></div>
+</div>
+<div class="shots">
+<img class="phone-sm" src="../mockups/3-forecast.svg" alt="Ena’s cash forecast card: eight weeks of balances, the week of 16 November falls to €372.57, below the €950 safe line">
+<img class="phone-sm" src="../mockups/4-credit-offer.svg" alt="Ena’s credit offer: set aside €400 for the instalment, or a simulated €1,000 Digital Business Loan">
+</div>
+</div>
+</section>
+<div class="notes"><b>Speaker notes.</b> Four steps, three real APIs: Jinius for supplier invoices, bocAPI for payments, balance and statement, JCC for card sales. The loan offer is simulated, and we say so. What sets us apart from the cash-flow coaches: Ena acts. It pays, inside a limit the owner sets, and leaves a receipt for every action. Those are the organisers’ own guardrails: spending limits, human review, log everything. Code decides every amount; the AI explains and asks.</div>
+<section id="number" class="number" data-transition="fade">
+<div class="text">
+<p class="eyebrow">THE ONE NUMBER</p>
+<h2>The owner’s time on the back office</h2>
+<div class="compare">
+<div class="cell before"><p class="lbl">Before, as owners told us</p><p class="val">[__] h</p><p class="note">a month on invoices, books and payments</p></div>
+<div class="cell after"><p class="lbl">With Ena</p><p class="val">~6 min</p><p class="note">a month, set-up included. She stepped in twice: the flour invoice and the reserve</p></div>
+</div>
+<p class="foot">Before is self-reported by [__] owners. After is modelled: a month of a bakery replayed through the loop, counting every time Ena asked.</p>
+</div>
+<img class="phone-sm" src="../mockups/2-receipts.svg" alt="Ena’s receipts: the €180 dairy invoice paid on its own, and the receipt for the approved €1,240 flour payment">
+</section>
+<div class="notes"><b>Speaker notes.</b> This is where the live demo goes: replay the bakery’s November in about a minute. The €180 dairy invoice is paid on its own. The €1,240 flour invoice asks; tap Approve; the receipt appears. The forecast flags the week of 16 November; she sets €400 aside for the instalment. Then the number: [__] hours a month before, from the interviews, against about 6 minutes with Ena. Say plainly that before is self-reported and after is modelled.</div>
+<section id="model" class="model">
+<p class="eyebrow">BUSINESS MODEL AND NEXT STEP</p>
+<h2>Good for the owner, good for the bank</h2>
+<div class="cols">
+<div class="col"><p class="eyebrow">WHO PAYS</p><h3>The owner, or the bank</h3><ul><li>A monthly subscription below the [€__] of back office it replaces</li><li>Or a feature of a premium BoC business account</li><li>Interviews: owners would pay [€__] a month</li></ul></div>
+<div class="col"><p class="eyebrow">WHAT BOC GAINS</p><h3>Loans paid on time</h3><ul><li>Instalments set aside before a lean month</li><li>Digital Business Loans offered in the week they’re needed</li><li>Payments and deposits stay at BoC</li></ul></div>
+<div class="col ask"><p class="eyebrow">THE NEXT STEP</p><h3>A pilot with BoC</h3><ul><li>[__] business customers in one vertical, for three months</li><li>A standing payment mandate within the owner’s limit</li><li>Measure: owner hours and missed instalments</li></ul></div>
+</div>
+<p class="footer">Team Ena: Roman, Youssef, Keith · github.com/romamo/ena · CC BY-SA 4.0</p>
+</section>
+<div class="notes"><b>Speaker notes.</b> Who pays is still open: a subscription from the owner, or the bank bundling Ena into its business account. Lead with what the bank gains, since the jury is mostly Bank of Cyprus: fewer missed instalments, loans sold at the moment of need, payments that stay at BoC. The ask: a pilot with a handful of BoC business customers in one vertical. Then go back to the approval card: she taps Approve, the receipt appears. “Ena: one agent for your whole back office.” Fill the bracketed numbers from the interviews and agree the pilot size.</div>
+</body>
+</html>
