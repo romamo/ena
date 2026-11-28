@@ -111,6 +111,8 @@ Not found. The sandbox catalogue has five products (B2B-APIs, PSD2-AISP-PISP, PS
 
 With both, a subscription reached `ACTV` (consent, `code`, user token, `PATCH`) and a payment reached `CPLT` (consent, `code`, user token, `execute`).
 
+**Verified 2026-11-28, `ena-serve --bank boc`:** the portal accepts an `http` redirect URI with a private IP and no port (`http://192.168.50.69/boc/consent`), which answers §6 question 9. With that URI on the app, the code exchange must carry `redirect_uri` too: without it `POST /oauth2/token` answered 400 `apicoa400`; with it, the user token came back and `execute` reached `CPLT`. A payment whose code was spent stays `AUTHORIZED` in BoC's screen and offers no new code, so it needs a new payment.
+
 **Superseded: live run, 2026-11-27 evening** (kept as a record; the resolution above replaces its open question) (app "Ena", redirect URI `https://localhost/callback`, `uv run ena-boc`):
 
 | Step | Result |

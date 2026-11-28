@@ -11,6 +11,12 @@ repeated callback can never book a sale twice.
 An event advance offer is kept with its event's id, inserted offered once per offer id,
 and decided once (accepted or declined) in the same transaction as its receipt; an event
 has at most one accepted advance.
+A bank consent (a payment the bank holds until the owner confirms it there) is kept with
+the bank's payment id and the reason the gate paid; it is open until its receipt is
+written, closed in the same transaction, and at most one is open at a time, since the
+bank's redirect after a confirmation names no payment (docs/boc-notes.md §4).
+The last read of the bank account is kept, one copy that each read replaces, so a
+restart doesn't spend one of the few reads the bank allows a day.
 """
 
 from __future__ import annotations
@@ -20,7 +26,16 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from ena.models import AdvanceStatus, ApprovalRequest, ApprovalStatus, CardSale, Offer, Receipt
+from ena.models import (
+    AdvanceStatus,
+    ApprovalRequest,
+    ApprovalStatus,
+    BankAccount,
+    BankConsent,
+    CardSale,
+    Offer,
+    Receipt,
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS receipts (
@@ -50,6 +65,19 @@ CREATE TABLE IF NOT EXISTS advances (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_accepted_advance_per_event
     ON advances (event_id) WHERE status = 'accepted';
+CREATE TABLE IF NOT EXISTS consents (
+    id TEXT PRIMARY KEY,
+    ref TEXT NOT NULL UNIQUE,
+    payment_id TEXT NOT NULL,
+    why TEXT NOT NULL,
+    open INTEGER NOT NULL,
+    body TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_consent ON consents (open) WHERE open = 1;
+CREATE TABLE IF NOT EXISTS bank_account (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    body TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS card_sales (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
@@ -78,6 +106,15 @@ class StoredAdvance:
     offer: Offer
     event_id: str
     status: AdvanceStatus
+
+
+@dataclass(frozen=True)
+class StoredConsent:
+    """A bank consent, the bank's id for its payment, and why the gate paid."""
+
+    consent: BankConsent
+    payment_id: str
+    why: str
 
 
 class Store:
@@ -186,6 +223,61 @@ class Store:
                 (receipt.id, receipt.ref, receipt.model_dump_json()),
             )
 
+    # Bank consents
+
+    def add_consent(
+        self, consent: BankConsent, payment_id: str, why: str, attempt_at: dt.datetime
+    ) -> None:
+        """Keep an open consent and record the attempt to pay its ref, in one transaction;
+        fails when one is open already or its ref has one."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO attempts (ref, at) VALUES (?, ?)",
+                (consent.ref, attempt_at.isoformat()),
+            )
+            self._insert_consent(StoredConsent(consent, payment_id, why))
+
+    def consent(self, consent_id: str) -> StoredConsent | None:
+        row = self._db.execute(
+            "SELECT body, payment_id, why FROM consents WHERE id = ?", (consent_id,)
+        ).fetchone()
+        return None if row is None else _stored_consent(row)
+
+    def open_consent(self) -> StoredConsent | None:
+        """The one consent waiting for the owner's confirmation in the bank, if any."""
+        row = self._db.execute(
+            "SELECT body, payment_id, why FROM consents WHERE open = 1"
+        ).fetchone()
+        return None if row is None else _stored_consent(row)
+
+    def close_consent(self, consent_id: str, receipt: Receipt) -> None:
+        """Close an open consent and write its receipt, in one transaction."""
+        with self._db:
+            cursor = self._db.execute(
+                "UPDATE consents SET open = 0 WHERE id = ? AND open = 1", (consent_id,)
+            )
+            if cursor.rowcount != 1:
+                raise StoreError(f"consent {consent_id} is not open")
+            self._db.execute(
+                "INSERT INTO receipts (id, ref, body) VALUES (?, ?, ?)",
+                (receipt.id, receipt.ref, receipt.model_dump_json()),
+            )
+
+    # The bank account's last read
+
+    def keep_bank_account(self, account: BankAccount) -> None:
+        """Keep the latest read, replacing the one before."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO bank_account (id, body) VALUES (1, ?)"
+                " ON CONFLICT (id) DO UPDATE SET body = excluded.body",
+                (account.model_dump_json(),),
+            )
+
+    def bank_account(self) -> BankAccount | None:
+        row = self._db.execute("SELECT body FROM bank_account WHERE id = 1").fetchone()
+        return None if row is None else BankAccount.model_validate_json(row[0])
+
     # Approval requests
 
     def add_approval(self, request: ApprovalRequest, ref: str) -> None:
@@ -220,8 +312,15 @@ class Store:
         ).fetchone()
         return None if row is None else ApprovalRequest.model_validate_json(row[0])
 
-    def record_approval(self, approved: ApprovalRequest, ref: str, attempt_at: dt.datetime) -> None:
-        """Approve a pending request and record the attempt to pay it, in one transaction.
+    def record_approval(
+        self,
+        approved: ApprovalRequest,
+        ref: str,
+        attempt_at: dt.datetime,
+        consent: StoredConsent | None = None,
+    ) -> None:
+        """Approve a pending request and record the attempt to pay it, in one transaction,
+        with the bank consent that waits for the owner when the bank asks for one.
 
         A crash can leave the request pending, or approved with its attempt on record,
         never approved with no attempt (a ref that could be neither paid nor retried).
@@ -233,6 +332,20 @@ class Store:
             self._db.execute(
                 "INSERT INTO attempts (ref, at) VALUES (?, ?)", (ref, attempt_at.isoformat())
             )
+            if consent is not None:
+                if consent.consent.ref != ref:
+                    raise StoreError(f"consent {consent.consent.id} is not for {ref}")
+                self._insert_consent(consent)
+
+    def _insert_consent(self, stored: StoredConsent) -> None:
+        """Inside the caller's transaction: keep an open consent."""
+        if not stored.payment_id:
+            raise StoreError(f"consent {stored.consent.id} needs the bank's payment id")
+        consent = stored.consent
+        self._db.execute(
+            "INSERT INTO consents (id, ref, payment_id, why, open, body) VALUES (?, ?, ?, ?, 1, ?)",
+            (consent.id, consent.ref, stored.payment_id, stored.why, consent.model_dump_json()),
+        )
 
     def record_decline(self, declined: ApprovalRequest, receipt: Receipt) -> None:
         """Decline a pending request and write its receipt, in one transaction."""
@@ -258,6 +371,11 @@ class Store:
         )
         if cursor.rowcount != 1:
             raise StoreError(f"approval {decided.id} is not pending")
+
+
+def _stored_consent(row: tuple[str, str, str]) -> StoredConsent:
+    body, payment_id, why = row
+    return StoredConsent(BankConsent.model_validate_json(body), payment_id, why)
 
 
 def _stored_advance(row: tuple[str, str, str]) -> StoredAdvance:

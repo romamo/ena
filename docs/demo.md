@@ -4,7 +4,7 @@ The talk has 4 minutes in all, so the live demo gets about a minute and a half. 
 
 | Laptop | Runs | Needs |
 |---|---|---|
-| Agent | `ena-serve` on port 8000, the chat page's dev server on port 5173 | This repository after `uv sync` and `npm ci` in `web/`; `ANTHROPIC_API_KEY` in the shell; the JCC settings in `.env` if the card payment is shown |
+| Agent | `ena-serve` on port 8000, the chat page's dev server on port 5173 | This repository after `uv sync` and `npm ci` in `web/`; `ANTHROPIC_API_KEY` in the shell; the Jinius buyer's client (`JINIUS_CLIENT_ID`, `JINIUS_CLIENT_SECRET`) in `.env` for the Jinius tab; the JCC settings in `.env` if the card payment is shown |
 | Projector | A browser at the agent laptop's address, the deck, the backup video | Nothing from this repository |
 
 ## The network
@@ -26,7 +26,7 @@ cd web
 npm run dev -- --host
 ```
 
-The page's dev server proxies `/chat` and `/approvals` to `ena-serve` on the same laptop, so the API itself keeps listening on `127.0.0.1` only. Find the laptop's address on the hotspot:
+The page's dev server proxies the API's routes (`/chat`, `/approvals`, `/dashboard`, `/jinius` and the rest, `web/vite.config.ts`) to `ena-serve` on the same laptop, so the API itself keeps listening on `127.0.0.1` only. Find the laptop's address on the hotspot:
 
 ```bash
 ipconfig getifaddr en0
@@ -36,18 +36,35 @@ ipconfig getifaddr en0
 
 Open `http://<agent laptop's address>:5173` in a phone-sized window (the browser's device mode at about 400 pixels wide is enough), zoomed so the back row can read it. Vite accepts a request addressed by IP without any change to its config.
 
+## Check Jinius before the talk
+
+The Jinius tab reads the invoices sent to DUMMY, the buyer's legal entity, live from the Jinius integration environment each time the button is tapped; nothing is cached. On the agent laptop, with `ena-serve` running:
+
+```bash
+curl -s http://127.0.0.1:8000/jinius/invoices | jq '.source, [.invoices[].number]'
+```
+
+`"live"` and the two invoice numbers (`EFM-2026-001`, `EFM-2026-002`) mean the tab will show them live. Anything else is fixed before the talk, not on stage:
+
+| Answer | Meaning | Fix |
+|---|---|---|
+| `"fixture"` | Jinius couldn't be reached; the tab shows the saved responses, marked "Saved data" | Check the hotspot reaches `api.integration.platform.cy`; if it can't, say "saved data" on stage |
+| 502, "403 with no body" | DUMMY's plan lacks the invoice API | Settings → Subscription in the portal: Enterprise (`docs/jinius-notes.md`, section 0) |
+| 503, "Jinius is not configured" | No `JINIUS_CLIENT_ID` in `.env` | Copy the Client ID and Secret from Settings → Developer, restart `ena-serve` |
+
 ## What the reply cache covers
 
 `--cache` answers a demo question the same way every time and at once, but only a reply that moved no money is cached: a reply with an approval or a payment always goes to the model (`ena/cache.py`). So "Pay the flour invoice" and its Approve call the model live on stage, and the forecast, reserve, loan and advance questions come from the cache once a rehearsal has asked them on the same day and ledger state. Fill the cache by running the demo path once with the same `--cache` file and the same `--day`, then keep the file.
 
 ## The path on stage
 
-1. "Pay the flour invoice": the €1,240 approval card, above the €500 limit
-2. Approve: the receipt, marked simulated
-3. "Will I be short of cash this month?": the forecast flags the week of 16 November
-4. "Can I get an advance for the Georgiou wedding's costs?": the advance offer
+1. Dashboard → **Jinius** → **Read invoices from Jinius**: EFM-2026-002, €1,240 from Ena Flour Mill Ltd, "Waiting approval", under a green "Live" line. This is the one step that shows a partner API working live; back to the chat with "Back to chat"
+2. "Pay the flour invoice": the €1,240 approval card, above the €500 limit
+3. Approve: the receipt, marked simulated
+4. "Will I be short of cash this month?": the forecast flags the week of 16 November
+5. "Can I get an advance for the Georgiou wedding's costs?": the advance offer
 
-Say the rest in words. The card payment through JCC is optional: its callback reaches the agent laptop only through a tunnel to port 8000 (`docs/jcc-notes.md`, section 3).
+Say the rest in words. In step 1, say "this is the feed Ena reads from Jinius", not "the invoice Ena pays": the chat runs on the synthetic month, whose flour invoice comes from Mesaoria Mills, and approving it changes nothing in Jinius. The page's "Synthetic demo" banner stays visible above the Jinius tab, so say that the tab is the live part. The card payment through JCC is optional: its callback reaches the agent laptop only through a tunnel to port 8000 (`docs/jcc-notes.md`, section 3).
 
 ## If the laptops can't see each other
 

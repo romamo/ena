@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     AwareDatetime,
@@ -63,6 +63,8 @@ class InvoiceStatus(StrEnum):
     NEW = "new"
     SCHEDULED = "scheduled"
     AWAITING_APPROVAL = "awaiting_approval"
+    AWAITING_BANK = "awaiting_bank"
+    """Approved or within the limit, waiting for the owner's confirmation in the bank."""
     PAID = "paid"
     DECLINED = "declined"
 
@@ -262,9 +264,66 @@ class Receipt(_Entity):
     simulated: Flag = False
     """A paid payment whose bank moves no money (the stand-in); False for any other
     receipt, and for one stored before the label existed."""
+    sandbox: Flag = False
+    """A paid payment the Bank of Cyprus sandbox executed (test money, `CPLT`); False for
+    any other receipt."""
+
+    @model_validator(mode="after")
+    def _one_bank_label(self) -> Self:
+        if self.simulated and self.sandbox:
+            raise ValueError("a receipt is simulated or from the sandbox, not both")
+        return self
 
 
-Card = ApprovalRequest | Receipt | Forecast | Offer
+class BankConsent(_Entity):
+    """A payment the bank holds until the owner confirms it in the bank's own screen.
+
+    bocAPI asks for that confirmation on every payment (docs/boc-notes.md §3): the gate has
+    decided to pay (within the limit, or the owner approved), the bank has the payment
+    initiated, and nothing is paid until the owner confirms at `consent_url`.
+    """
+
+    id: Id
+    action: str
+    amount_cents: NonNegativeCents
+    ref: str
+    actor: Actor
+    """Who decided to pay: Ena within the limit, or the owner by approving."""
+    consent_url: Annotated[str, StringConstraints(pattern=r"^https://")]
+    created_at: AwareDatetime
+
+
+class BankLine(_Entity):
+    """A statement line as the Bank of Cyprus sandbox returned it."""
+
+    id: Id
+    date: IsoDate
+    amount_cents: NonNegativeCents
+    direction: Literal["in", "out"] | None
+    """None when the sandbox's line carries no `dcInd` (some sample rows don't)."""
+    description: str
+
+
+class BankAccount(_Entity):
+    """The Bank of Cyprus sandbox account, read live: a sample customer's, not the
+    synthetic business's, so its figures are never mixed with the synthetic month's."""
+
+    account_id: Id
+    iban: Iban | None
+    currency: Currency
+    available_cents: Cents | None
+    current_cents: Cents | None
+    read_at: AwareDatetime
+    lines: tuple[BankLine, ...]
+    """Newest first."""
+    stale: Flag = False
+    """The sandbox refused a fresh read, so this is the last copy, as of `read_at`."""
+    lines_stale: Flag = False
+    """The sandbox refused the statement while the balance was read: `lines` are the last
+    copy's, or none when there is no copy."""
+
+
+Card = ApprovalRequest | BankConsent | Receipt | Forecast | Offer | BankAccount
 """What a chat message can show as a card (§8)."""
 
 

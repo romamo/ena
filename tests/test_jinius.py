@@ -1,5 +1,7 @@
 import datetime as dt
 import json
+import threading
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
@@ -17,6 +19,7 @@ from ena.connectors.jinius import (
     JiniusUnavailable,
     ManualPayment,
     VatNumber,
+    read_payable,
     read_supplier_invoices,
     to_supplier_invoice,
 )
@@ -376,3 +379,85 @@ def test_read_supplier_invoices_does_not_hide_a_refusal() -> None:
         read_supplier_invoices(client(api), IBANS)
 
     assert not isinstance(caught.value, JiniusUnavailable)
+
+
+# The owner's read: no IBAN directory needed
+
+
+def test_read_payable_live_shows_each_invoice_as_jinius_sent_it() -> None:
+    api = Api(
+        {
+            ("GET", "/v3/invoices/payable"): [
+                httpx.Response(200, json=fixture("invoices_payable.json"))
+            ]
+        }
+    )
+
+    feed = read_payable(client(api))
+
+    assert (feed.source, feed.note) == ("live", "Jinius integration environment, live")
+    by_number = {i.number: i for i in feed.invoices}
+    assert set(by_number) == {"EFM-2026-001", "EFM-2026-002"}
+    flour = by_number["EFM-2026-002"]
+    assert flour.supplier == "Ena Flour Mill Ltd"
+    assert flour.amount_cents == 124000
+    assert flour.status == "WaitingApproval"
+    assert flour.due_date is not None
+
+
+def test_read_payable_falls_back_to_the_saved_invoices_when_jinius_is_down() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route to host")
+
+    jinius = JiniusClient(settings(), httpx.Client(transport=httpx.MockTransport(handle)))
+
+    feed = read_payable(jinius)
+
+    assert feed.source == "fixture"
+    assert "sandbox offline, showing saved data" in feed.note
+    assert sorted(i.amount_cents for i in feed.invoices) == [18000, 124000]
+
+
+def test_read_payable_does_not_hide_a_refusal() -> None:
+    api = Api({("GET", "/v3/invoices/payable"): [httpx.Response(403)]})
+
+    with pytest.raises(JiniusError, match="plan lacks this API"):
+        read_payable(client(api))
+
+
+def test_read_payable_refuses_an_invoice_in_another_currency() -> None:
+    page = fixture("invoices_payable.json")
+    page["documents"][0]["currency"] = "USD"
+    api = Api({("GET", "/v3/invoices/payable"): [httpx.Response(200, json=page)]})
+
+    with pytest.raises(JiniusError, match="is in USD, not EUR"):
+        read_payable(client(api))
+
+
+def test_concurrent_reads_fetch_one_token() -> None:
+    page = fixture("invoices_payable.json")
+    token_asked = threading.Event()
+    release = threading.Event()
+    tokens = 0
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal tokens
+        if str(request.url) == TOKEN_URL:
+            tokens += 1
+            token_asked.set()
+            release.wait(timeout=5)
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 300})
+        return httpx.Response(200, json=page)
+
+    jinius = JiniusClient(settings(), httpx.Client(transport=httpx.MockTransport(handle)), Clock())
+    first = threading.Thread(target=jinius.payable_invoices)
+    second = threading.Thread(target=jinius.payable_invoices)
+    first.start()
+    assert token_asked.wait(timeout=5)
+    second.start()  # waits on the lock while the first thread's token is in flight
+    time.sleep(0.1)  # let the second thread reach the token check before the first ends
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert tokens == 1

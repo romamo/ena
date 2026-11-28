@@ -164,6 +164,7 @@ def test_the_final_payment_repays_the_accepted_advance_through_the_gate() -> Non
     assert "Repay the event advance" in approval.action
     assert s.bank.calls == []
     receipt = s.gate.approve(approval.id)
+    assert isinstance(receipt, Receipt)
     assert receipt.result == PaymentResult.PAID
     assert receipt.simulated is True
     assert s.bank.calls == [(approval.action, 280_000, f"repay-{advance.id}")]

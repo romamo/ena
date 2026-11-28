@@ -128,6 +128,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 .weeks .closing { text-align: right; font-variant-numeric: tabular-nums; }
 .weeks li.lean { color: var(--bad); font-weight: 600; }
 .weeks li.lean .bar span { background: var(--bad); }
+.lines { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.lines li {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  gap: 8px;
+  font-size: 12px;
+}
+.lines li span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 
 .composer { border-top: 1px solid var(--line); padding: 8px 12px 12px; }
 .chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; }
@@ -316,3 +324,11 @@ button.alert:hover { background: #fff1d6; }
 .dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: middle; }
 .dot.have { background: var(--blue); }
 .dot.short { background: var(--warn); }
+
+/* Jinius tab */
+.jinius-invoice { gap: 4px; }
+.jinius-row { display: flex; justify-content: space-between; gap: 12px; }
+.jinius-row .amount { font-variant-numeric: tabular-nums; }
+.source { font-size: 12px; padding: 6px 10px; border: 1px solid var(--line); background: #fff; }
+.source.live { color: var(--good); }
+.source.saved { color: var(--warn); }

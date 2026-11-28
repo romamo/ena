@@ -23,6 +23,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -61,6 +62,10 @@ class JiniusError(RuntimeError):
 
 class JiniusUnavailable(JiniusError):
     """Jinius could not be reached, or failed on its side (5xx)."""
+
+
+class JiniusNotConfigured(JiniusError):
+    """The buyer's Jinius client is not set in `.env`, so nothing was asked of Jinius."""
 
 
 class JiniusSettings(BaseSettings):
@@ -252,6 +257,8 @@ class JiniusClient:
         self.clock = clock
         self._token: AccessToken | None = None
         self._token_until = 0.0
+        self._token_lock = threading.RLock()
+        """The app reads from FastAPI's threadpool: one token fetch at a time."""
 
     def payable_invoices(self) -> list[Document]:
         """Every invoice sent to our legal entity, all pages."""
@@ -286,27 +293,29 @@ class JiniusClient:
     # Plumbing
 
     def _bearer(self) -> str:
-        token = self._token
-        if token is None or self.clock() >= self._token_until:
-            token = self._fetch_token()
-        return token.bearer()
+        with self._token_lock:
+            token = self._token
+            if token is None or self.clock() >= self._token_until:
+                token = self._fetch_token()
+            return token.bearer()
 
     def _fetch_token(self) -> AccessToken:
-        response = self._send(
-            "POST",
-            f"{self.settings.base_url}/oauth/token",
-            data={
-                "grant_type": "client_credentials",
-                "client_id": self.settings.client_id,
-                "client_secret": self.settings.client_secret.get_secret_value(),
-            },
-        )
-        if response.is_error:
-            raise JiniusError(f"token request -> {response.status_code}: {response.text[:300]}")
-        token = AccessToken.model_validate(response.json())
-        self._token = token
-        self._token_until = self.clock() + token.expires_in - TOKEN_MARGIN_SECONDS
-        return token
+        with self._token_lock:
+            response = self._send(
+                "POST",
+                f"{self.settings.base_url}/oauth/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self.settings.client_id,
+                    "client_secret": self.settings.client_secret.get_secret_value(),
+                },
+            )
+            if response.is_error:
+                raise JiniusError(f"token request -> {response.status_code}: {response.text[:300]}")
+            token = AccessToken.model_validate(response.json())
+            self._token = token
+            self._token_until = self.clock() + token.expires_in - TOKEN_MARGIN_SECONDS
+            return token
 
     def _call(
         self,
@@ -361,10 +370,77 @@ def _error(response: httpx.Response) -> JiniusError:
 # Reading with the fixture fallback
 
 
+Source = Literal["live", "fixture"]
+
+LIVE_NOTE = "Jinius integration environment, live"
+
+
+class PayableInvoice(BaseModel):
+    """A payable invoice as the owner's page shows it, read from Jinius with nothing added."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    number: str = Field(min_length=1)
+    """The invoice number (`documentNumber`), such as `EFM-2026-002`."""
+    supplier: str = Field(min_length=1)
+    amount_cents: int
+    """In euro cents: an invoice in another currency is refused, not shown as euro."""
+    issue_date: dt.date
+    due_date: dt.date | None
+    status: str = Field(min_length=1)
+    """Jinius's own status, such as `WaitingApproval`."""
+
+    @classmethod
+    def of(cls, document: Document) -> PayableInvoice:
+        if document.kind != "Invoice":
+            raise JiniusError(f"{document.document_number} is a {document.kind}, not an invoice")
+        if document.currency != "EUR":
+            raise JiniusError(f"{document.document_number} is in {document.currency}, not EUR")
+        if document.issuer is None:
+            raise JiniusError(f"{document.document_number} names no supplier")
+        return cls(
+            number=document.document_number,
+            supplier=document.issuer.registered_business_name,
+            amount_cents=document.amount_cents,
+            issue_date=document.issue_date,
+            due_date=document.due_date,
+            status=document.status,
+        )
+
+
+class PayableFeed(BaseModel):
+    """The invoices sent to the business, and where they were read from."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    invoices: tuple[PayableInvoice, ...]
+    source: Source
+    note: str
+    """What the page shows about where the invoices came from."""
+
+
+def read_payable(client: JiniusClient, fixture: Path = FIXTURE_PAYABLE) -> PayableFeed:
+    """The payable invoices live, or from the saved fixture when Jinius is unreachable."""
+    documents, source, note = _payable_documents(client, fixture)
+    return PayableFeed(
+        invoices=tuple(PayableInvoice.of(doc) for doc in documents), source=source, note=note
+    )
+
+
+def _payable_documents(
+    client: JiniusClient, fixture: Path
+) -> tuple[tuple[Document, ...], Source, str]:
+    try:
+        return tuple(client.payable_invoices()), "live", LIVE_NOTE
+    except JiniusUnavailable as error:
+        page = DocumentPage.model_validate(json.loads(fixture.read_text(encoding="utf-8")))
+        return page.documents, "fixture", f"Jinius sandbox offline, showing saved data ({error})"
+
+
 @dataclass(frozen=True, slots=True)
 class InvoiceFeed:
     invoices: tuple[SupplierInvoice, ...]
-    source: Literal["live", "fixture"]
+    source: Source
     note: str
     """What the UI shows about where the invoices came from."""
 
@@ -375,17 +451,9 @@ def read_supplier_invoices(
     fixture: Path = FIXTURE_PAYABLE,
 ) -> InvoiceFeed:
     """Read the supplier invoices live, or from the saved fixture when Jinius is unreachable."""
-    try:
-        documents = client.payable_invoices()
-    except JiniusUnavailable as error:
-        page = DocumentPage.model_validate(json.loads(fixture.read_text(encoding="utf-8")))
-        return InvoiceFeed(
-            invoices=tuple(to_supplier_invoice(doc, ibans) for doc in page.documents),
-            source="fixture",
-            note=f"Jinius sandbox offline, showing saved data ({error})",
-        )
+    documents, source, note = _payable_documents(client, fixture)
     return InvoiceFeed(
         invoices=tuple(to_supplier_invoice(doc, ibans) for doc in documents),
-        source="live",
-        note="Jinius integration environment, live",
+        source=source,
+        note=note,
     )
