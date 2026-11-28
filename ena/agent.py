@@ -223,7 +223,7 @@ _NEGATION = re.compile(
     re.IGNORECASE,
 )
 _LOOKBEHIND = 24
-"""How many characters before a claim are searched for a negation."""
+"""How many characters before a claim, back to a comma, are searched for a negation."""
 
 UNCONFIRMED = "Unconfirmed, no bank receipt for this: "
 
@@ -232,7 +232,9 @@ def claims_payment(text: str) -> bool:
     """Whether the text says a payment was made (English or Greek), not negated."""
     for match in _CLAIM.finditer(text):
         before = text[max(0, match.start() - _LOOKBEHIND) : match.start()]
-        if not _NEGATION.search(before):
+        # Only the claim's own clause: "Nothing else is due, I paid it" claims a payment
+        clause = before.rsplit(",", 1)[-1]
+        if not _NEGATION.search(clause):
             return True
     return False
 
