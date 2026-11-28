@@ -106,6 +106,17 @@ class CashForecast(_Result):
     def _threshold_adds_up(self) -> Self:
         if self.threshold_cents != self.instalment_cents + self.buffer_cents:
             raise ValueError("threshold_cents != instalment_cents + buffer_cents")
+        if not self.forecast.weeks:
+            raise ValueError("the forecast has no weeks")
+        first_below = next(
+            (w.week_start for w in self.forecast.weeks if w.closing_cents < self.threshold_cents),
+            None,
+        )
+        if self.forecast.lean_week != first_below:
+            raise ValueError(
+                f"lean_week {self.forecast.lean_week} is not the first week closing below"
+                f" the threshold ({first_below})"
+            )
         return self
 
     @property

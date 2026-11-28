@@ -240,6 +240,23 @@ def test_a_scheduled_flow_is_never_zero() -> None:
         ScheduledFlow(date=START, amount_cents=1.5, label="float")
 
 
+def test_a_cash_forecast_lean_week_must_match_its_threshold() -> None:
+    # A lean week closing at the threshold would make the loan rule offer a €0 loan.
+    cash = run(10_000)
+    assert cash.forecast.lean_week is None
+    with pytest.raises(ValidationError, match="not the first week closing below"):
+        CashForecast.model_validate(
+            {
+                **cash.model_dump(),
+                "forecast": {**cash.forecast.model_dump(), "lean_week": START},
+            }
+        )
+    with pytest.raises(ValidationError, match="not the first week closing below"):
+        CashForecast.model_validate(
+            {**run(9_999).model_dump(), "threshold_cents": 49_999, "buffer_cents": 19_999}
+        )
+
+
 def test_euros() -> None:
     assert euros(0) == "€0.00"
     assert euros(5) == "€0.05"
