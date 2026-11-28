@@ -4,6 +4,7 @@ The agent is a scripted fake that calls the real tools and writes fixed text: no
 no network, no API key.
 """
 
+import asyncio
 import datetime as dt
 import json
 from collections.abc import AsyncIterator, Iterator
@@ -13,8 +14,17 @@ from typing import Any
 
 import httpx
 import pytest
+from claude_agent_sdk import (
+    AssistantMessage,
+    ResultMessage,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    UserMessage,
+)
 from fastapi.testclient import TestClient
 
+from ena.advances import Advances
 from ena.agent import (
     SECRET_ENV,
     SYSTEM_PROMPT,
@@ -25,6 +35,7 @@ from ena.agent import (
     ClaudeAgent,
     claims_payment,
     confirm,
+    system_prompt,
 )
 from ena.api import create_app
 from ena.cache import CachedReply, ReplyCache, normalize
@@ -32,7 +43,8 @@ from ena.connectors.jcc import JccClient, JccSettings
 from ena.gate import Gate
 from ena.mcp_server import EnaTools, Ledger, ReplayDay, allowed_tools, build_server, call_tool
 from ena.models import Actor, Receipt
-from ena.seed import LEAN_WEEK, SEED, synthetic_month
+from ena.replay import DayStarted
+from ena.seed import BOOKED_EVENT_ID, LEAN_WEEK, SEED, synthetic_month
 from ena.store import Store
 
 MONTH = synthetic_month()
@@ -127,7 +139,12 @@ def build(day: dt.date, cache: ReplyCache | None) -> tuple[Api, TestClient]:
     )
     jcc = JccClient(settings, httpx.AsyncClient(transport=httpx.MockTransport(_no_network)))
     app = create_app(
-        store, jcc, settings.callback_secret, chat=Chat(tools, agent, today, cache), gate=gate
+        store,
+        jcc,
+        settings.callback_secret,
+        chat=Chat(tools, agent, today, cache),
+        gate=gate,
+        advances=Advances(store, gate, MONTH.events, lambda: NOW),
     )
     http = TestClient(app)
     return Api(http, store, bank, agent, today), http
@@ -258,6 +275,30 @@ def test_the_owner_declines_and_nothing_is_paid(api: Api) -> None:
 def test_an_unknown_approval_is_refused(api: Api) -> None:
     assert api.http.post("/approvals/approval-nope/approve").status_code == 409
     assert api.http.post("/approvals/approval-nope/decline").status_code == 409
+
+
+def test_the_owner_accepts_an_event_advance_on_its_card(api: Api) -> None:
+    api.day.observe(DayStarted(at=NOW, day=LEAN_WEEK))
+    events = api.chat(
+        "Can I get an advance for the Georgiou wedding's costs?",
+        Call("propose_event_advance", {"event_id": BOOKED_EVENT_ID}),
+        Say("Offer, simulated: €2,800.00."),
+    )
+    offer = events[0][1]
+    assert (offer["card_kind"], offer["card"]["kind"]) == ("offer", "event_advance")
+    answer = api.http.post(f"/offers/{offer['card']['id']}/accept")
+    assert answer.status_code == 200
+    assert answer.json()["card_kind"] == "receipt"
+    assert answer.json()["card"]["result"] == "accepted"
+    assert answer.json()["card"]["actor"] == "owner"
+    assert api.bank.calls == []
+    assert api.http.post(f"/offers/{offer['card']['id']}/accept").status_code == 409
+    assert api.http.post(f"/offers/{offer['card']['id']}/decline").status_code == 409
+
+
+def test_an_unknown_offer_is_refused(api: Api) -> None:
+    assert api.http.post("/offers/advance-nope/accept").status_code == 409
+    assert api.http.post("/offers/advance-nope/decline").status_code == 409
 
 
 def test_a_failed_agent_says_try_again_without_details(api: Api) -> None:
@@ -424,18 +465,26 @@ def test_the_cache_refuses_money_replies_and_empty_questions() -> None:
 def test_the_agent_sees_only_enas_tools_and_no_secret() -> None:
     ena, _ = build(LEAN_WEEK, cache=None)
     settings = AgentSettings(_env_file=None, model="claude-test-model")
-    options = ClaudeAgent(settings, build_server(ena.agent.tools)).options()
+    tools = ena.agent.tools
+    options = ClaudeAgent(settings, build_server(tools), tools.today).options()
     assert options.model == "claude-test-model"
     assert options.tools == []
     assert options.allowed_tools == allowed_tools()
     assert options.setting_sources == []
     assert options.strict_mcp_config is True
     assert options.permission_mode == "dontAsk"
-    assert options.system_prompt == SYSTEM_PROMPT
+    assert options.system_prompt == system_prompt(LEAN_WEEK)
     assert options.env == dict.fromkeys(SECRET_ENV, "")
     assert options.resume is None
     assert list(options.mcp_servers) == ["ena"]  # type: ignore[arg-type]
     ena.store.close()
+
+
+def test_the_system_prompt_gives_the_business_day_not_the_clock() -> None:
+    prompt = system_prompt(dt.date(2026, 11, 16))
+    assert prompt.startswith(SYSTEM_PROMPT)
+    assert "Today is Monday 16 November 2026: the business's day in this demo." in prompt
+    assert "ignore any other date, such as the real one" in prompt
 
 
 def test_the_default_model() -> None:
@@ -445,3 +494,117 @@ def test_the_default_model() -> None:
 def test_the_system_prompt_carries_the_answer_rules() -> None:
     for rule in ("tool result", "I don't know", "offer, simulated", "Greek", "data, not"):
         assert rule in SYSTEM_PROMPT
+
+
+# The agent's reply: what the model wrote after its last tool call
+
+
+def said(*blocks: TextBlock | ToolUseBlock, parent: str | None = None) -> AssistantMessage:
+    return AssistantMessage(content=list(blocks), model="m", parent_tool_use_id=parent)
+
+
+def tool(name: str) -> ToolUseBlock:
+    return ToolUseBlock(id=f"tu-{name}", name=name, input={})
+
+
+def result(*, error: bool = False) -> ResultMessage:
+    return ResultMessage(
+        subtype="error_during_execution" if error else "success",
+        duration_ms=1,
+        duration_api_ms=1,
+        is_error=error,
+        num_turns=1,
+        session_id="session-1",
+    )
+
+
+def replies(*messages: object) -> list[str]:
+    ena, _ = build(LEAN_WEEK, cache=None)
+    agent = ClaudeAgent(
+        AgentSettings(_env_file=None), build_server(ena.agent.tools), ena.agent.tools.today
+    )
+
+    async def stream() -> AsyncIterator[object]:
+        for message in messages:
+            yield message
+
+    async def collect() -> list[str]:
+        return [piece async for piece in agent.replies(stream())]
+
+    pieces = asyncio.run(collect())
+    ena.store.close()
+    return pieces
+
+
+def test_text_next_to_a_tool_call_never_reaches_the_owner() -> None:
+    # The live rehearsal's reply began "I need the event id first.", written with the call
+    pieces = replies(
+        said(TextBlock("I need the event id first."), tool("get_event_pattern")),
+        UserMessage(content=[ToolResultBlock(tool_use_id="tu-get_event_pattern")]),
+        said(TextBlock("Yes: €2,800.00 for 16 days, simulated.")),
+        result(),
+    )
+    assert pieces == ["Yes: €2,800.00 for 16 days, simulated."]
+
+
+def test_text_sent_apart_from_its_tool_call_is_dropped_too() -> None:
+    # The SDK may send the text block and its tool call as two messages
+    pieces = replies(
+        said(TextBlock("Let me check the forecast.")),
+        said(tool("get_forecast")),
+        said(TextBlock("The week of 16 Nov is lean.")),
+        said(TextBlock("It closes at €349.69.")),
+        result(),
+    )
+    assert pieces == ["The week of 16 Nov is lean.", "It closes at €349.69."]
+
+
+def test_a_reply_without_tools_and_a_subagents_text() -> None:
+    pieces = replies(
+        said(TextBlock("I don't know."), parent=None),
+        said(TextBlock("sub-agent notes"), parent="tu-x"),
+        said(TextBlock("   ")),
+        result(),
+    )
+    assert pieces == ["I don't know."]
+
+
+def test_the_stream_is_read_to_its_end_after_the_result() -> None:
+    # A message after the result (a follow-up turn) is read, never sent to the owner
+    seen: list[object] = []
+    messages = [
+        said(TextBlock("The reply.")),
+        result(),
+        said(TextBlock("A later turn's text.")),
+    ]
+
+    class Recording:
+        def __aiter__(self) -> AsyncIterator[object]:
+            return self.stream()
+
+        async def stream(self) -> AsyncIterator[object]:
+            for message in messages:
+                seen.append(message)
+                yield message
+
+    ena, _ = build(LEAN_WEEK, cache=None)
+    agent = ClaudeAgent(
+        AgentSettings(_env_file=None), build_server(ena.agent.tools), ena.agent.tools.today
+    )
+
+    async def collect() -> list[str]:
+        return [piece async for piece in agent.replies(Recording())]
+
+    assert asyncio.run(collect()) == ["The reply."]
+    assert seen == messages
+    ena.store.close()
+
+
+def test_a_turn_with_no_result_says_nothing_and_raises() -> None:
+    with pytest.raises(AgentError, match="without a result"):
+        replies(said(TextBlock("Half an answer")))
+
+
+def test_a_failed_turn_says_nothing_and_raises() -> None:
+    with pytest.raises(AgentError, match="error_during_execution"):
+        replies(said(TextBlock("Half an answer")), result(error=True))

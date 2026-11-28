@@ -26,6 +26,15 @@ on 20 November. The instalment falls after the lean week, which is what the rese
 rule looks for. With both invoices paid on arrival the balance stays above zero all
 month; its lowest point is €90.88, after the rent.
 
+The bakery also caters weddings and christenings, paid as a deposit at booking and a
+final payment after the event (`events`): 12 completed and 1 cancelled since January
+2025, the history the event advance reads, and one booked wedding on Saturday 19
+December 2026 (`BOOKED_EVENT_ID`): €8,000, a €2,000 deposit and €4,800 of costs, the
+numbers of the build plan's worked example (docs/build-plan.md §7). The spare cash is not
+the example's €1,000: it comes from the forecast, which leaves none in the lean week, so
+the advance offered on the lean Monday is €2,800 for 16 days, not €1,800. The events'
+money is not on the statement: the month's cash story above stays as it is.
+
 The amounts are placeholders until the interviews: they all sit in `AMOUNTS`.
 """
 
@@ -41,6 +50,8 @@ from ena.models import (
     Account,
     Business,
     CardSale,
+    Event,
+    EventStatus,
     InvoiceStatus,
     Loan,
     SupplierInvoice,
@@ -69,6 +80,9 @@ SETTLEMENT_DELAY = dt.timedelta(days=1)
 
 RENT_DAY = 20
 LOAN_DAY = 25
+
+BOOKED_EVENT_ID = "syn-event-0014"
+"""The booked wedding the event advance is offered for."""
 
 
 class Placeholders(BaseModel):
@@ -137,6 +151,7 @@ class SeedMonth(BaseModel):
     transactions: tuple[Transaction, ...]
     invoices: tuple[SupplierInvoice, ...]
     card_sales: tuple[CardSale, ...]
+    events: tuple[Event, ...]
     first_day: dt.date
     last_day: dt.date
 
@@ -152,6 +167,7 @@ class SeedMonth(BaseModel):
         ids += [record.id for record in self.card_sales]
         ids += [invoice.jinius_id for invoice in self.invoices]
         ids += [sale.jcc_order_id for sale in self.card_sales]
+        ids += [event.id for event in self.events]
         unmarked = [record_id for record_id in ids if not record_id.startswith(ID_PREFIX)]
         if unmarked:
             raise ValueError(f"ids without the {ID_PREFIX!r} prefix: {unmarked}")
@@ -160,6 +176,7 @@ class SeedMonth(BaseModel):
         names = [self.business.name]
         names += [invoice.supplier_name for invoice in self.invoices]
         names += [record.counterparty for record in self.transactions]
+        names += [event.customer for event in self.events]
         unnamed = [name for name in names if not name.endswith(SYNTHETIC)]
         if unnamed:
             raise ValueError(f"names without {SYNTHETIC!r}: {unnamed}")
@@ -242,6 +259,69 @@ def _invoices() -> list[SupplierInvoice]:
     ]
 
 
+_PAST_EVENTS = (
+    # (customer, event date, price, costs, days the costs were paid before, final paid after)
+    ("Christofi wedding", dt.date(2025, 1, 25), 600_000, 360_000, 5, 7),
+    ("Ioannou christening", dt.date(2025, 3, 15), 250_000, 150_000, 3, 5),
+    ("Neophytou wedding", dt.date(2025, 4, 26), 900_000, 540_000, 7, 9),
+    ("Papadopoulos christening", dt.date(2025, 5, 17), 300_000, 180_000, 4, 6),
+    ("Charalambous wedding", dt.date(2025, 6, 14), 800_000, 480_000, 6, 8),
+    ("Constantinou wedding", dt.date(2025, 7, 5), 700_000, 420_000, 5, 9),
+    ("Savva christening", dt.date(2025, 9, 13), 280_000, 168_000, 3, 7),
+    ("Antoniou wedding", dt.date(2025, 10, 11), 850_000, 510_000, 7, 8),
+    ("Kyriacou wedding", dt.date(2026, 4, 25), 750_000, 450_000, 6, 9),
+    ("Michael christening", dt.date(2026, 5, 23), 260_000, 156_000, 4, 5),
+    ("Panayiotou wedding", dt.date(2026, 6, 20), 950_000, 570_000, 5, 9),
+    ("Georgiades wedding", dt.date(2026, 9, 12), 820_000, 492_000, 7, 6),
+)
+"""Each takes a 25% deposit; costs are about 60% of the price."""
+
+
+def _events() -> list[Event]:
+    events = []
+    for n, (customer, day, price, costs, before, after) in enumerate(_PAST_EVENTS, start=1):
+        deposit = price // 4
+        events.append(
+            Event(
+                id=f"syn-event-{n:04d}",
+                customer=f"{customer} {SYNTHETIC}",
+                event_date=day,
+                price_cents=price,
+                deposit_cents=deposit,
+                costs_cents=costs,
+                final_payment_cents=price - deposit,
+                status=EventStatus.COMPLETED,
+                costs_paid_date=day - dt.timedelta(days=before),
+                final_paid_date=day + dt.timedelta(days=after),
+            )
+        )
+    events.append(
+        Event(
+            id="syn-event-0013",
+            customer=f"Demetriou wedding {SYNTHETIC}",
+            event_date=dt.date(2026, 7, 18),
+            price_cents=700_000,
+            deposit_cents=175_000,
+            costs_cents=0,
+            final_payment_cents=525_000,
+            status=EventStatus.CANCELLED,
+        )
+    )
+    events.append(
+        Event(
+            id=BOOKED_EVENT_ID,
+            customer=f"Georgiou wedding {SYNTHETIC}",
+            event_date=dt.date(2026, 12, 19),
+            price_cents=800_000,
+            deposit_cents=200_000,
+            costs_cents=480_000,
+            final_payment_cents=600_000,
+            status=EventStatus.BOOKED,
+        )
+    )
+    return events
+
+
 def synthetic_month() -> SeedMonth:
     """Build the synthetic month: the same records on every call."""
     rng = random.Random(SEED)  # noqa: S311 - synthetic data, not cryptography
@@ -269,6 +349,7 @@ def synthetic_month() -> SeedMonth:
         transactions=tuple(_transactions(sales)),
         invoices=tuple(_invoices()),
         card_sales=tuple(sales),
+        events=tuple(_events()),
         first_day=FIRST_DAY,
         last_day=LAST_DAY,
     )

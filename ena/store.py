@@ -8,6 +8,9 @@ A payment attempt is recorded for a ref before the bank is called, also append-o
 so a payment whose outcome is unknown is never sent twice.
 Card sales booked from JCC are append-only too, at most one per JCC order id, so a
 repeated callback can never book a sale twice.
+An event advance offer is kept with its event's id, inserted offered once per offer id,
+and decided once (accepted or declined) in the same transaction as its receipt; an event
+has at most one accepted advance.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from ena.models import ApprovalRequest, ApprovalStatus, CardSale, Receipt
+from ena.models import AdvanceStatus, ApprovalRequest, ApprovalStatus, CardSale, Offer, Receipt
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS receipts (
@@ -38,6 +41,15 @@ CREATE TABLE IF NOT EXISTS attempts (
     ref TEXT PRIMARY KEY,
     at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS advances (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    offer_id TEXT NOT NULL UNIQUE,
+    event_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    body TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS one_accepted_advance_per_event
+    ON advances (event_id) WHERE status = 'accepted';
 CREATE TABLE IF NOT EXISTS card_sales (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
@@ -57,6 +69,15 @@ class StoredApproval:
 
     request: ApprovalRequest
     ref: str
+
+
+@dataclass(frozen=True)
+class StoredAdvance:
+    """An event advance offer, the event it is for, and what the owner did with it."""
+
+    offer: Offer
+    event_id: str
+    status: AdvanceStatus
 
 
 class Store:
@@ -120,6 +141,50 @@ class Store:
         """Every booked card sale, oldest first."""
         rows = self._db.execute("SELECT body FROM card_sales ORDER BY seq").fetchall()
         return [CardSale.model_validate_json(body) for (body,) in rows]
+
+    # Event advance offers
+
+    def add_advance(self, offer: Offer, event_id: str) -> None:
+        """Keep an advance offer, offered; an offer id already kept stays as it is (the id
+        carries the amount, so it is the same offer)."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO advances (offer_id, event_id, status, body) VALUES (?, ?, ?, ?)"
+                " ON CONFLICT (offer_id) DO NOTHING",
+                (offer.id, event_id, AdvanceStatus.OFFERED.value, offer.model_dump_json()),
+            )
+
+    def advance(self, offer_id: str) -> StoredAdvance | None:
+        row = self._db.execute(
+            "SELECT body, event_id, status FROM advances WHERE offer_id = ?", (offer_id,)
+        ).fetchone()
+        return None if row is None else _stored_advance(row)
+
+    def accepted_advance_for(self, event_id: str) -> StoredAdvance | None:
+        row = self._db.execute(
+            "SELECT body, event_id, status FROM advances WHERE event_id = ? AND status = ?",
+            (event_id, AdvanceStatus.ACCEPTED.value),
+        ).fetchone()
+        return None if row is None else _stored_advance(row)
+
+    def record_advance_decision(
+        self, offer_id: str, status: AdvanceStatus, receipt: Receipt
+    ) -> None:
+        """Accept or decline an offered advance and write its receipt, in one transaction;
+        fails when the offer is not offered, or its event already has an accepted one."""
+        if status is AdvanceStatus.OFFERED:
+            raise StoreError(f"advance {offer_id}: a decision is accepted or declined")
+        with self._db:
+            cursor = self._db.execute(
+                "UPDATE advances SET status = ? WHERE offer_id = ? AND status = ?",
+                (status.value, offer_id, AdvanceStatus.OFFERED.value),
+            )
+            if cursor.rowcount != 1:
+                raise StoreError(f"advance {offer_id} is not offered")
+            self._db.execute(
+                "INSERT INTO receipts (id, ref, body) VALUES (?, ?, ?)",
+                (receipt.id, receipt.ref, receipt.model_dump_json()),
+            )
 
     # Approval requests
 
@@ -193,3 +258,8 @@ class Store:
         )
         if cursor.rowcount != 1:
             raise StoreError(f"approval {decided.id} is not pending")
+
+
+def _stored_advance(row: tuple[str, str, str]) -> StoredAdvance:
+    body, event_id, status = row
+    return StoredAdvance(Offer.model_validate_json(body), event_id, AdvanceStatus(status))

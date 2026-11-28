@@ -41,6 +41,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ena.advances import Advances
 from ena.agent import AgentError, AgentRunner, AgentSettings, Chat, ClaudeAgent
 from ena.api import create_app
 from ena.cache import ReplyCache
@@ -142,7 +143,7 @@ RunnerFactory = Callable[[EnaTools], AgentRunner]
 def claude_runner(settings: ServeSettings) -> RunnerFactory:
     if not settings.model_credential:
         return lambda _tools: NoCredentialAgent()
-    return lambda tools: ClaudeAgent(settings.agent, build_server(tools))
+    return lambda tools: ClaudeAgent(settings.agent, build_server(tools), tools.today)
 
 
 def _now() -> dt.datetime:
@@ -205,6 +206,7 @@ def build(
         jcc_settings.callback_secret,
         chat=chat,
         gate=gate,
+        advances=Advances(store, gate, month.events, _now),
         dashboard=Dashboard(ledger, store),
     )
     if settings.jcc is None:

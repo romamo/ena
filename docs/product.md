@@ -12,6 +12,7 @@ Ena is one AI agent for a micro-business's back office on top of its Bank of Cyp
 
 - G-1: One loop works end to end: a supplier invoice from Jinius is paid within the limit or after approval, booked, the cash forecast flags a lean week, and a Digital Business Loan or a reserve is offered. Check: the demo replays the synthetic month live on the BoC sandbox with no hand fix-up. By: 2026-11-29
 - G-2: The entry is submitted on time with code, sample data, README and deck. Check: the F2 final submission is sent before 15:00. By: 2026-11-29
+- G-3: A deposit-based business is offered a short-term advance against a booked event. Check: the build plan's worked example (an €8,000 wedding, €1,000 spare cash) gets a simulated €1,800 advance for 16 days from the rule. By: 2026-11-29
 
 ## Non-goals
 

@@ -47,7 +47,7 @@ Ena is one AI agent for a micro-business's back office, on top of the owner's Ba
 | Correctness of money actions | No payment without passing the gate; every payment has exactly one receipt | The jury is a bank |
 | Explainability | Every number the owner sees comes from code; the LLM only restates it | Organisers' guidance: AI explains, a person decides |
 | Determinism | The stage run gives the same result every time (seeded data, cached replies) | No live debugging on stage |
-| Latency | Chat answer starts streaming in under ~3 s; demo questions cached | A 5–6 minute pitch |
+| Latency | Chat answer starts streaming in under ~3 s; demo questions cached | A 4 minute pitch |
 | Security | Secrets only in `.env`; the LLM never sees tokens; sandbox only | Rules and common sense |
 | Scale | One business, one owner, one laptop | It is a demo; see §18 for a pilot |
 
@@ -120,7 +120,7 @@ One module (`ena/models.py`), written first by Roman (task 0.4). Amounts in euro
 | CardSale | id, amountCents, date, jccOrderId, status | From JCC callback |
 | Loan | id, instalmentCents, nextDueDate | Existing loan; read-only, never modified |
 | Forecast | weeks[]: {weekStart, openingCents, inCents, outCents, closingCents}, leanWeek, reason | Output of rules |
-| Event | id, customer, eventDate, priceCents, depositCents, costsCents, finalPaymentCents, status (booked / completed / cancelled) | For the event advance |
+| Event | id, customer, eventDate, priceCents, depositCents, costsCents, finalPaymentCents, status (booked / completed / cancelled), costsPaidDate, finalPaidDate | For the event advance; deposit + final payment = price; a completed event has both dates |
 | Offer | id, kind (reserve / loan / event_advance), amountCents, termDays, basis (numbers used), simulated | Output of rules |
 | ApprovalRequest | id, action, amountCents, reason, status (pending / approved / declined), createdAt, decidedAt | Created by the gate |
 | Receipt | id, at, actor (ena / owner), action, amountCents, ref (invoice, payment, offer), result, explanation | Append-only |
@@ -148,6 +148,7 @@ One module (`ena/models.py`), written first by Roman (task 0.4). Amounts in euro
 Rules for tools:
 - Tools take ids, never amounts, for money actions: the amount always comes from the invoice or the rule, not from the LLM.
 - There is no tool to change the limit or approve a request. Approval comes only from the owner's tap in the UI.
+- There is no tool to accept an event advance either: the owner accepts or declines it with a tap on its offer card (`POST /offers/{id}/accept` or `/decline`).
 
 ---
 
@@ -187,6 +188,7 @@ Expected card sales = average weekly card sales over the last 4 weeks. `leanWeek
 1. From at least 10 completed events: deposit share of price, cost share of price, days before the event costs are paid, days after the event the final payment arrives, cancellation rate.
 2. For a booked event: costs expected before the event minus the deposit minus spare cash = gap.
 3. If gap > 0 and eligible (≥ 10 completed events, cancellations at most 1 in 10, **proposed**): advance = gap, due on the expected final-payment date, repaid from that payment through the gate.
+4. The owner accepts the offer with a tap on its card; the receipt says it is credited (simulated, no money moves). When the event's final payment posts to the statement (money in, the final payment's amount, its reference naming the event), Ena asks the gate to repay the accepted advance (ref `repay-<offer id>`): within the limit the gate pays, above it the owner approves. A simulated advance is never repaid through a bank that moves real money: the gate refuses a `repay-` ref on such a bank, at the request and at the owner's approval. The server has no statement feed yet, so the repayment runs in the tests and the replay, not in the demo app.
 
 Worked example (synthetic): €8,000 wedding, 25% deposit (€2,000), costs 60% (€4,800) paid 3–7 days before, spare cash €1,000 → gap €1,800 → advance €1,800 for 16 days, repaid from the €6,000 final payment.
 
@@ -202,7 +204,7 @@ Worked example (synthetic): €8,000 wedding, 25% deposit (€2,000), costs 60% 
 
 ### Onboarding (proposal, 2026-11-28)
 
-**For the hackathon there is no onboarding screen.** The loop is what the jury scores, and the 5 to 6 pitch minutes go to the approval card and its receipt. Before the demo we activate the bocAPI subscription with `ena-boc subscribe` and `activate`, and Jinius and JCC are connected. On stage, one line covers it: "The owner connected the account and set a €500 limit in 5 minutes; Ena read 3 months of history." The chat opens on the first summary card (step 5), which shows the limit.
+**For the hackathon there is no onboarding screen.** The loop is what the jury scores, and the 4 pitch minutes go to the approval card and its receipt. Before the demo we activate the bocAPI subscription with `ena-boc subscribe` and `activate`, and Jinius and JCC are connected. On stage, one line covers it: "The owner connected the account and set a €500 limit in 5 minutes; Ena read 3 months of history." The chat opens on the first summary card (step 5), which shows the limit.
 
 The flow below is the product's set-up, kept as the answer when the jury asks how an owner starts. It is the "5 min" of plan.md's owner journey and runs in the same chat, one card per step:
 
@@ -345,7 +347,7 @@ docs/                  plan, hackathon, interviews, this file, jinius-notes, jcc
 - **Rules:** each function has tests with fixed inputs and exact expected outputs (Keith). Run on every pull request.
 - **Gate:** below limit pays; above limit creates an approval; approve pays once; decline never pays; duplicate trigger returns the same receipt.
 - **Connectors:** parse every saved fixture into the data model.
-- **Chat:** 10 owner questions with expected answers from the seed data (task 6.7).
+- **Chat:** 11 owner questions with expected answers from the seed data (task 6.7), the event advance among them.
 - **End to end:** the replay runs the whole month with no errors; run before every rehearsal.
 
 ---
@@ -451,7 +453,7 @@ Checkpoints:
 | LLM latency or outage on stage | Medium | Cached demo replies; backup video |
 | Venue network fails | Medium | Fixtures + cached replies + video |
 | Interviews give no numbers | Low | Keep placeholder numbers, label them as such |
-| Too many features for 5–6 minutes | High | One scenario; the event advance is 20 seconds or cut |
+| Too many features for 4 minutes | High | One scenario; the event advance is 20 seconds or cut |
 
 ---
 
@@ -474,4 +476,4 @@ Checkpoints:
 4. Demo business: bakery, or a caterer that also shows the event advance?
 5. Event advance: Must or Should? Cancellation limit for eligibility?
 6. Ask the BoC lending mentor: is the event advance a new product or a use of the Digital Business Loan?
-7. Do the 5–6 pitch minutes include the demo and Q&A?
+7. ~~Is the Q&A inside the 4 pitch minutes?~~ No: the 4 minutes include the demo, the Q&A is separate (2026-11-28)

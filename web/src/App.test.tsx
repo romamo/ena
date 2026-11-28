@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { APPROVAL, DECLINED, FORECAST, LOAN, RECEIPT, sse, streaming } from "./fixtures";
+import { ACCEPTED, ADVANCE, APPROVAL, DECLINED, FORECAST, LOAN, RECEIPT, sse, streaming } from "./fixtures";
 
 afterEach(cleanup);
 
@@ -72,6 +72,25 @@ describe("App", () => {
     expect(within(approval).queryByRole("button", { name: "Approve" })).toBeNull();
     expect(within(approval).getByText("You approved")).toBeTruthy();
     expect(fetcher).toHaveBeenCalledWith("/approvals/approval-syn-inv-0002/approve", { method: "POST" });
+  });
+
+  it("takes an event advance with the owner's Accept, and never a loan", async () => {
+    const fetcher = answering({
+      "/chat": () => streaming(sse(ADVANCE, LOAN, { kind: "done", text: "x", unconfirmed: false, cached: false })),
+      "/offers/advance-syn-event-0014-280000/accept": () => Response.json(ACCEPTED),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.click(screen.getByRole("button", { name: "Can I get an advance for the Georgiou wedding's costs?" }));
+    const [advance, loan] = await screen.findAllByRole("article", { name: "Offer" });
+    if (advance === undefined || loan === undefined) throw new Error("two offer cards expected");
+    expect(within(loan).queryByRole("button", { name: "Accept" })).toBeNull();
+    fireEvent.click(within(advance).getByRole("button", { name: "Accept" }));
+    const receipt = await within(advance).findByRole("article", { name: "Receipt" });
+    expect(within(receipt).getByText("Receipt · accepted")).toBeTruthy();
+    expect(within(advance).queryByRole("button", { name: "Accept" })).toBeNull();
+    expect(fetcher).toHaveBeenCalledWith("/offers/advance-syn-event-0014-280000/accept", {
+      method: "POST",
+    });
   });
 
   it("labels a receipt simulated only when the API says so", async () => {

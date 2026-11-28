@@ -22,8 +22,8 @@ from ena.mcp_server import (
     call_tool,
 )
 from ena.models import ApprovalRequest, Forecast, InvoiceStatus, Offer, OfferKind, Receipt
-from ena.replay import TZ, replay
-from ena.seed import LEAN_WEEK, synthetic_month
+from ena.replay import TZ, DayStarted, replay
+from ena.seed import BOOKED_EVENT_ID, LEAN_WEEK, synthetic_month
 from ena.store import Store
 
 MONTH = synthetic_month()
@@ -190,13 +190,102 @@ def test_the_reserve_and_the_loan_offers_on_the_lean_monday() -> None:
     assert s.bank.calls == []
 
 
+def test_the_event_pattern_reads_the_seeds_events() -> None:
+    result = setup(LEAN_WEEK).tools.get_event_pattern()
+    assert result.pattern is not None
+    assert (result.pattern.completed, result.pattern.cancelled) == (12, 1)
+    assert result.deposit_share == "25.00%"
+    assert result.cost_share == "60.00%"
+    assert result.costs_paid == "3 to 7 days before the event"
+    assert result.final_payment_arrives == "5 to 9 days after the event"
+    assert [e.id for e in result.booked] == [BOOKED_EVENT_ID]
+    assert result.booked[0].final_payment == "€6,000.00"
+
+
+def test_the_event_advance_on_the_lean_monday_has_no_spare_cash() -> None:
+    s = setup(LEAN_WEEK)
+    s.tools.start_turn()
+    result = s.tools.propose_event_advance(BOOKED_EVENT_ID)
+    assert result.offer is not None
+    assert result.offer.kind is OfferKind.EVENT_ADVANCE
+    assert result.offer.simulated is True
+    assert result.amount == "€2,800.00"
+    assert result.offer.term_days == 16
+    assert result.offer.basis["spare_cents"] == 0
+    assert "simulated" in result.note
+    assert s.tools.finish_turn().cards == [result.offer]
+    assert s.bank.calls == []
+
+
+def test_spare_cash_is_the_lowest_closing_above_the_threshold_until_the_costs() -> None:
+    # On Monday 30 November the costs fall due 12 December (7 days before the 19th): the
+    # weeks of 30 November and 7 December count, the week of 14 December doesn't
+    s = setup(MONTH.last_day)
+    weeks = s.tools.get_forecast().forecast.weeks
+    threshold = 40_000 + 55_000
+    lowest = min(weeks[0].closing_cents, weeks[1].closing_cents)
+    assert weeks[2].closing_cents < lowest  # the week after the costs is ignored
+    result = s.tools.propose_event_advance(BOOKED_EVENT_ID)
+    assert result.offer is not None
+    assert result.offer.basis["spare_cents"] == lowest - threshold == 42_646
+    assert result.amount == "€2,373.54"
+
+
+def test_the_event_advance_leaves_one_receipt() -> None:
+    s = setup(LEAN_WEEK)
+    s.tools.propose_event_advance(BOOKED_EVENT_ID)
+    s.tools.propose_event_advance(BOOKED_EVENT_ID)
+    receipts = s.store.receipts()
+    assert len(receipts) == 1
+    assert receipts[0].ref == f"advance-{BOOKED_EVENT_ID}-280000"
+    assert receipts[0].result == "offered"
+
+
+def test_a_completed_event_gets_no_advance_and_no_receipt() -> None:
+    s = setup(LEAN_WEEK)
+    result = s.tools.propose_event_advance("syn-event-0001")
+    assert result.offer is None
+    assert result.note == "No advance: the event is completed, not booked"
+    assert s.store.receipts() == []
+
+
+def test_an_advance_at_another_amount_gets_its_own_receipt() -> None:
+    # 2 November leaves spare cash before the costs (€2,134.53); the lean Monday none
+    s = setup(dt.date(2026, 11, 2))
+    first = s.tools.propose_event_advance(BOOKED_EVENT_ID)
+    s.day.observe(DayStarted(at=NOW, day=LEAN_WEEK))
+    second = s.tools.propose_event_advance(BOOKED_EVENT_ID)
+    assert first.offer is not None and second.offer is not None
+    assert first.offer.id != second.offer.id
+    receipts = s.store.receipts()
+    assert [(r.ref, r.amount_cents) for r in receipts] == [
+        (first.offer.id, first.offer.amount_cents),
+        (second.offer.id, 280_000),
+    ]
+    assert first.offer.amount_cents != 280_000
+
+
+def test_on_the_first_day_a_refusal_needs_no_forecast() -> None:
+    # 1 November: the forecast has no history yet, but a completed event is refused anyway
+    s = setup(MONTH.first_day)
+    result = s.tools.propose_event_advance("syn-event-0001")
+    assert result.note == "No advance: the event is completed, not booked"
+    with pytest.raises(ToolError, match="no forecast"):
+        s.tools.propose_event_advance(BOOKED_EVENT_ID)
+
+
+def test_an_unknown_event_is_refused() -> None:
+    with pytest.raises(ToolError, match="no event"):
+        setup(LEAN_WEEK).tools.propose_event_advance("syn-event-9999")
+
+
 def test_the_loan_offer_leaves_one_receipt() -> None:
     s = setup(LEAN_WEEK)
     s.tools.propose_loan()
     s.tools.propose_loan()
     receipts = s.store.receipts()
     assert len(receipts) == 1
-    assert receipts[0].ref == "loan-20261116"
+    assert receipts[0].ref == "loan-20261116-100000"
     assert receipts[0].result == "offered"
     assert receipts[0].amount_cents == 100_000
 

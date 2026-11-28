@@ -1,4 +1,4 @@
-"""The chat test script (docs/build-plan.md §13): 10 owner questions on the seed month.
+"""The chat test script (docs/build-plan.md §13): 11 owner questions on the seed month.
 
 `chat_questions.json` holds each question in English and Greek, the day of November it
 is asked on, the invoices paid before it (through the gate, the owner approving any above
@@ -41,7 +41,8 @@ from ena.agent import (
 )
 from ena.gate import Gate
 from ena.mcp_server import TOOLS, EnaTools, Ledger, ReplayDay, build_server, call_tool
-from ena.seed import AMOUNTS, LEAN_WEEK, LOAN_DAY, RENT_DAY, synthetic_month
+from ena.models import EventStatus
+from ena.seed import AMOUNTS, BOOKED_EVENT_ID, LEAN_WEEK, LOAN_DAY, RENT_DAY, synthetic_month
 from ena.store import Store
 
 MONTH = synthetic_month()
@@ -65,6 +66,11 @@ FIGURE = re.compile(r"-?€(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?")
 
 GREEK = re.compile(r"[Ά-ώ]")
 """A Greek letter, with or without its accent (U+0386 to U+03CE)."""
+NARRATION = re.compile(
+    r"^\s*(?:I need\b|Let me\b|I'll\b|I will\b|I'm going to\b|First,? I\b)", re.IGNORECASE
+)
+"""A reply that opens by narrating the model's steps ("I need the event id first.")."""
+
 DONT_KNOW = re.compile(
     r"\bI don't know\b|\bI do not know\b|δεν (?:το )?(?:ξέρω|γνωρίζω)",
     re.IGNORECASE,
@@ -179,12 +185,29 @@ def test_the_expected_figures_follow_the_seed() -> None:
     assert gap > instalment  # the reserve alone does not cover it
     loan = -(-gap // LOAN_STEP) * LOAN_STEP
 
+    # The event advance on the lean Monday: the costs fall due 7 days before the wedding
+    # (the most any past event took), after the lean week, which closes below the
+    # threshold, so there is no spare cash and the advance is the costs less the deposit,
+    # repaid from the final payment
+    wedding = next(event for event in MONTH.events if event.id == BOOKED_EVENT_ID)
+    completed = [event for event in MONTH.events if event.status is EventStatus.COMPLETED]
+    costs_before = max(
+        (event.event_date - event.costs_paid_date).days
+        for event in completed
+        if event.costs_paid_date is not None
+    )
+    assert costs_before == 7
+    assert LEAN_WEEK <= wedding.event_date - dt.timedelta(days=costs_before)
+    assert LEAN_WEEK_CLOSING < instalment + out // 4  # the lean week: spare cash is 0
+    advance = wedding.costs_cents - wedding.deposit_cents
+
     expected = {
         "balance": [paid_on_arrival[rent_day]],
         "rent-friday": [balance_through(LEAN_WEEK), LEAN_WEEK_CLOSING],
         "lean-week": [LEAN_WEEK_CLOSING, instalment],
         "reserve": [instalment],
         "loan": [loan],
+        "event-advance": [advance, wedding.final_payment_cents],
         "unpaid-invoices": [dairy, flour, dairy + flour],
         "pay-flour": [flour, AMOUNTS.auto_pay_limit_cents],
         "unmatched-payments": [rent, instalment],
@@ -197,8 +220,8 @@ def test_the_expected_figures_follow_the_seed() -> None:
     assert MONTH.loan.next_due_date.day == LOAN_DAY
 
 
-def test_the_script_has_ten_questions_on_real_tools_and_invoices() -> None:
-    assert len(QUESTIONS) == 10
+def test_the_script_has_eleven_questions_on_real_tools_and_invoices() -> None:
+    assert len(QUESTIONS) == 11
     assert len(BY_ID) == len(QUESTIONS)
     names = {spec.name for spec in TOOLS}
     invoice_ids = {invoice.id for invoice in MONTH.invoices}
@@ -260,6 +283,8 @@ def reply_problems(question: Question, reply: str, allowed: set[int]) -> list[st
     """What is wrong with a reply: a missing figure, a figure no tool gave, no "I don't know"."""
     said = figures_in(reply)
     problems = []
+    if NARRATION.search(reply):
+        problems.append("opens with narration")
     if question.dont_know:
         if not DONT_KNOW.search(reply):
             problems.append("no 'I don't know'")
@@ -314,6 +339,8 @@ def test_the_reply_check_catches_a_wrong_or_invented_figure() -> None:
     assert reply_problems(lean, "€349.69, €400.00 and about €350", allowed) == [
         "not from a tool ['€350']"
     ]
+    narrated = "I need the event id first.\n\nThe week closes at €349.69, below the €400.00."
+    assert reply_problems(lean, narrated, allowed) == ["opens with narration"]
     vat = BY_ID["unknown-vat"]
     assert reply_problems(vat, "Δεν το ξέρω.", set()) == []
     assert reply_problems(vat, "About €900.", set()) == [
@@ -341,7 +368,7 @@ LIVE = bool(os.environ.get("ANTHROPIC_API_KEY"))
 @pytest.mark.parametrize(("question", "language"), CASES)
 def test_the_real_agent_answers_each_question(question: Question, language: Language) -> None:
     s = setup(question)
-    agent = ClaudeAgent(AgentSettings(), build_server(s.tools))
+    agent = ClaudeAgent(AgentSettings(), build_server(s.tools), s.day)
     events = ask(Chat(s.tools, agent, s.day, cache=None), question.text(language))
     s.store.close()
     errors = [event.message for event in events if isinstance(event, ErrorEvent)]

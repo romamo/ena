@@ -16,6 +16,9 @@ gap. When it doesn't (no reserve offer, or a gap above the instalment), the loan
 
 With no lean week, or a gap the reserve covers, it returns None.
 
+The offer's id names the lean week and the amount (`loan-<YYYYMMDD>-<cents>`): a loan of
+another amount is another offer.
+
 The existing loan never changes (§3 rule 4): this offers a new loan and nothing here defers
 or alters an instalment.
 """
@@ -47,10 +50,11 @@ def loan_offer(cash: CashForecast) -> Offer | None:
     if reserve is not None and reserve_cents >= gap:
         return None
     rounded = -(-gap // LOAN_STEP_CENTS) * LOAN_STEP_CENTS
+    amount = min(rounded, LOAN_CAP_CENTS)
     return Offer(
-        id=f"loan-{lean.week_start:%Y%m%d}",
+        id=f"loan-{lean.week_start:%Y%m%d}-{amount}",
         kind=OfferKind.LOAN,
-        amount_cents=min(rounded, LOAN_CAP_CENTS),
+        amount_cents=amount,
         term_days=LOAN_TERM_DAYS,
         basis=frozendict(
             gap_cents=gap,

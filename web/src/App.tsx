@@ -9,6 +9,7 @@ export const SUGGESTIONS = [
   "Will I be short of cash this month?",
   "Should I set money aside for the loan instalment?",
   "Can I get a loan to cover the gap?",
+  "Can I get an advance for the Georgiou wedding's costs?",
   "What did you pay this month?",
   "What's my balance?",
 ];

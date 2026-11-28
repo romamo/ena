@@ -16,9 +16,9 @@ Ena is for micro-businesses and the self-employed who bank with Bank of Cyprus. 
 | Payment | Pays at or below the owner's limit, asks for approval above it, and writes a receipt for every payment | bocAPI payments (sign, initiate, consent, execute to `CPLT`) | The gate [ena/gate.py](ena/gate.py) with [ena/store.py](ena/store.py); the bank calls in [ena/connectors/boc.py](ena/connectors/boc.py) | The gate runs in the tests against a stand-in bank; the bocAPI payment runs on the sandbox by hand with `ena-boc` (below). The two are not wired together yet |
 | Books | Matches statement lines to paid invoices and to card sales | bocAPI statement; JCC card payments (callback, `getOrderStatusExtended.do`) | [ena/rules/books.py](ena/rules/books.py); the statement call in [ena/connectors/boc.py](ena/connectors/boc.py); the JCC callback `POST /jcc/callback` in [ena/api.py](ena/api.py) with [ena/connectors/jcc.py](ena/connectors/jcc.py), which books a confirmed card payment once | The synthetic month. The JCC callback runs in the tests on the saved sandbox responses in [fixtures/jcc/](fixtures/jcc/); see [docs/jcc-notes.md](docs/jcc-notes.md) for the live sandbox |
 | Cash forecast | Projects 8 weeks of cash and flags the first lean week | bocAPI balance and statement | [ena/rules/forecast.py](ena/rules/forecast.py) | The synthetic month: week 3 (16 November) is lean |
-| Credit offer | Sets money aside for the loan instalment, or pre-fills a Digital Business Loan | None: the loan offer is simulated, since the sandbox has no lending API | [ena/rules/reserve.py](ena/rules/reserve.py), [ena/rules/loan.py](ena/rules/loan.py) | The forecast's numbers |
+| Credit offer | Sets money aside for the loan instalment, pre-fills a Digital Business Loan, or offers a short-term advance against a booked event's costs, which the owner accepts on its card and the gate repays from the event's final payment | None: the loan and advance offers are simulated, since the sandbox has no lending API | [ena/rules/reserve.py](ena/rules/reserve.py), [ena/rules/loan.py](ena/rules/loan.py), [ena/rules/events.py](ena/rules/events.py), [ena/advances.py](ena/advances.py) | The forecast's numbers; the synthetic catering events |
 
-The synthetic month ([ena/seed.py](ena/seed.py)) is a bakery's November 2026 built from a fixed seed: a €180 dairy invoice under the €500 limit, a €1,240 flour invoice above it, card sales six days a week, the rent on 20 November and the loan instalment on 25 November. [ena/replay.py](ena/replay.py) plays it as a time-ordered stream of events.
+The synthetic month ([ena/seed.py](ena/seed.py)) is a bakery's November 2026 built from a fixed seed: a €180 dairy invoice under the €500 limit, a €1,240 flour invoice above it, card sales six days a week, the rent on 20 November and the loan instalment on 25 November. The bakery also caters events: 12 completed and 1 cancelled since January 2025, and the Georgiou wedding booked for 19 December, whose €4,800 of costs fall due before its €6,000 final payment arrives. [ena/replay.py](ena/replay.py) plays it as a time-ordered stream of events.
 
 The owner sees all of it in one chat page ([web/](web/)): Ena's replies stream in with the approval, receipt, forecast and offer cards, and the owner approves or declines a payment above the limit with one tap.
 
@@ -101,9 +101,10 @@ uv run ena-boc token
 | Software | Roman |
 | Pitch on stage | Youssef |
 | Presentation, idea work, customer interviews | Together |
-| Demo, submission and organisers | Open |
+| Demo | Keith |
+| Submission and organisers | Youssef |
 
-Members: Roman, Youssef and Keith. Keith's area is still to agree.
+Members: Roman, Youssef and Keith.
 
 ## Repository
 
@@ -111,8 +112,9 @@ Members: Roman, Youssef and Keith. Keith's area is still to agree.
 - [docs/plan.md](docs/plan.md): the team plan: decisions, roles, weekend, pitch hook, the one number, open tasks
 - [docs/build-plan.md](docs/build-plan.md): proposed architecture, data model, tools, rules, tasks and timeline
 - [docs/business-model-canvas.md](docs/business-model-canvas.md): the business model canvas: who pays, the channels, what Bank of Cyprus gains
-- [docs/mockups/](docs/mockups/README.md): mockups of the owner's screens: the approval above the limit, receipts, the cash forecast, the credit offer and the month end
+- [docs/mockups/](docs/mockups/README.md): mockups of the owner's screens: the approval above the limit, receipts, the cash forecast, the credit offer and the month end, and screenshots of the running chat page
 - [docs/pitch/](docs/pitch/README.md): the pitch deck of 5 slides with speaker notes
+- [docs/demo.md](docs/demo.md): the stage demo on two laptops: one runs Ena, the other shows it on the projector
 - [docs/hackathon.md](docs/hackathon.md): the hackathon reference: APIs, links, rules, how the jury scores
 - [docs/interviews/](docs/interviews/guide.md): the customer interview guide (English, Russian, Greek)
 - [ena/models.py](ena/models.py): the data model of the build plan's §4: amounts in integer euro cents, dates as ISO `YYYY-MM-DD`, frozen models that refuse unknown fields

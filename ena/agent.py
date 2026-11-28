@@ -5,11 +5,17 @@ nothing else: no built-in tool (no shell, no files, no web), no settings or CLAU
 from disk, and the secret environment variables blanked, so the model sees only the
 tools' results (§2, Q-3). The model id comes from `ENA_MODEL`.
 
+Only the reply reaches the owner, never the model's narration of its steps ("I need the
+event id first."): text the model writes next to a tool call is dropped. Text is held
+until the model's next message shows whether a tool call follows it (the SDK may send a
+text block and its tool call as two messages), and the reply is what the model wrote
+after its last tool call, sent when the turn ends.
+
 `Chat` runs one owner message as a turn and yields its events for the SSE stream:
 
 1. A question the reply cache holds is answered from it (`ena/cache.py`)
-2. Otherwise the agent runs; each piece of text it writes is sent as it comes, and the
-   cards the tools produced (approvals, receipts, the forecast, offers) go before it
+2. Otherwise the agent runs; its reply comes when the turn ends (`ClaudeAgent.replies`),
+   and the cards the tools produced (approvals, receipts, the forecast, offers) go before it
 3. No "paid" without a receipt: a piece that says a payment was made, when the gate
    returned no paid receipt for a payment asked earlier in the turn, is marked
    unconfirmed; an old receipt the agent only listed backs only a sentence that cites
@@ -23,8 +29,9 @@ Turns run one at a time. The agent never approves or declines: that is the owner
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import re
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -35,6 +42,7 @@ from claude_agent_sdk import (
     McpSdkServerConfig,
     ResultMessage,
     TextBlock,
+    ToolUseBlock,
     query,
 )
 from pydantic import BaseModel, ConfigDict, Field
@@ -72,7 +80,9 @@ in this turn. Call the tool first; restate its euro strings as written; never co
 estimate or round a figure yourself.
 - If no tool gives a figure, say "I don't know" and say what you can look up instead.
 - Never promise a loan or an advance. A loan is always an "offer, simulated": a pre-filled \
-Digital Business Loan, not an application and not a promise. The existing loan never \
+Digital Business Loan, not an application and not a promise. An event advance is also \
+an "offer, simulated", repaid from the event's final payment; only the owner accepts it, \
+with the tap on its card, so never say it is accepted. The existing loan never \
 changes: never suggest deferring an instalment.
 - Never say you paid an invoice now unless pay_invoice returned its receipt with result \
 "paid" in this turn. For a payment made earlier, never say "I paid": call list_receipts \
@@ -86,6 +96,16 @@ pay_invoice, and only when the owner asks or the invoice is due.
 - Reply in the owner's language: Greek if they write in Greek, English otherwise.
 - Be brief: two or three short sentences. The cards show the details.
 """
+
+
+def system_prompt(day: dt.date) -> str:
+    """The answer rules plus the business's current day, which the demo sets, not the clock."""
+    return (
+        f"{SYSTEM_PROMPT}\n"
+        f"Today is {day:%A} {day.day} {day:%B %Y}: the business's day in this demo. Date every "
+        "answer from it (what is due, past due, recent or ahead) and ignore any other date, "
+        "such as the real one or a receipt's time. The data is current as of today, not stale.\n"
+    )
 
 
 class AgentSettings(BaseSettings):
@@ -109,15 +129,16 @@ class AgentRunner(Protocol):
 class ClaudeAgent:
     """Claude through the Claude Agent SDK, with only Ena's MCP tools."""
 
-    def __init__(self, settings: AgentSettings, server: McpSdkServerConfig) -> None:
+    def __init__(self, settings: AgentSettings, server: McpSdkServerConfig, today: Today) -> None:
         self._settings = settings
         self._server = server
+        self._today = today
         self._session: str | None = None
 
     def options(self) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             model=self._settings.model,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=system_prompt(self._today()),
             mcp_servers={SERVER_NAME: self._server},
             strict_mcp_config=True,
             tools=[],
@@ -131,17 +152,37 @@ class ClaudeAgent:
 
     async def run(self, prompt: str) -> AsyncIterator[str]:
         try:
-            async for message in query(prompt=prompt, options=self.options()):
-                if isinstance(message, AssistantMessage) and message.parent_tool_use_id is None:
-                    for block in message.content:
-                        if isinstance(block, TextBlock) and block.text.strip():
-                            yield block.text
-                elif isinstance(message, ResultMessage):
-                    if message.is_error:
-                        raise AgentError(f"the agent's turn ended in {message.subtype}")
-                    self._session = message.session_id
+            async for piece in self.replies(query(prompt=prompt, options=self.options())):
+                yield piece
         except ClaudeSDKError as error:
             raise AgentError(f"the agent is unavailable ({type(error).__name__})") from error
+
+    async def replies(self, messages: AsyncIterable[object]) -> AsyncIterator[str]:
+        """The text of the model's reply, without the text it wrote next to a tool call."""
+        held: list[str] = []
+        ended = False
+        async for message in messages:
+            if isinstance(message, AssistantMessage) and message.parent_tool_use_id is None:
+                if any(isinstance(block, ToolUseBlock) for block in message.content):
+                    held.clear()  # narration of a step: the step's result answers instead
+                    continue
+                held += [
+                    block.text
+                    for block in message.content
+                    if isinstance(block, TextBlock) and block.text.strip()
+                ]
+            elif isinstance(message, ResultMessage):
+                if message.is_error:
+                    raise AgentError(f"the agent's turn ended in {message.subtype}")
+                self._session = message.session_id
+                if not ended:
+                    ended = True
+                    for piece in held:
+                        yield piece
+                held.clear()
+            # the stream is read to its end, so the session finishes before the next turn
+        if not ended:
+            raise AgentError("the agent's turn ended without a result")
 
 
 # The receipt rule

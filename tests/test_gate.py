@@ -503,6 +503,10 @@ def test_the_store_has_no_api_to_change_or_delete_a_receipt_or_an_attempt() -> N
         "pending_approval_for",
         "record_approval",
         "record_decline",
+        "add_advance",
+        "advance",
+        "accepted_advance_for",
+        "record_advance_decision",
     }
 
 
