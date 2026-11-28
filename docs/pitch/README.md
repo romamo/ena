@@ -1,6 +1,6 @@
 # Pitch deck
 
-The five-slide deck for the 5 to 6 minute pitch, with speaker notes under each slide. Open [deck.html](deck.html) in a browser from a checkout: it reads its styles from [deck.css](deck.css) and the phone screens from [../mockups/](../mockups/README.md).
+The five-slide deck for the 4 minute pitch, with speaker notes under each slide. Open [deck.html](deck.html) in a browser from a checkout: it reads its styles from [deck.css](deck.css) and the phone screens from [../mockups/](../mockups/README.md).
 
 | Slide | What it says |
 |---|---|

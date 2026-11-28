@@ -113,6 +113,7 @@ Members: Roman, Youssef and Keith. Keith's area is still to agree.
 - [docs/business-model-canvas.md](docs/business-model-canvas.md): the business model canvas: who pays, the channels, what Bank of Cyprus gains
 - [docs/mockups/](docs/mockups/README.md): mockups of the owner's screens: the approval above the limit, receipts, the cash forecast, the credit offer and the month end, and screenshots of the running chat page
 - [docs/pitch/](docs/pitch/README.md): the pitch deck of 5 slides with speaker notes
+- [docs/demo.md](docs/demo.md): the stage demo on two laptops: one runs Ena, the other shows it on the projector
 - [docs/hackathon.md](docs/hackathon.md): the hackathon reference: APIs, links, rules, how the jury scores
 - [docs/interviews/](docs/interviews/guide.md): the customer interview guide (English, Russian, Greek)
 - [ena/models.py](ena/models.py): the data model of the build plan's §4: amounts in integer euro cents, dates as ISO `YYYY-MM-DD`, frozen models that refuse unknown fields

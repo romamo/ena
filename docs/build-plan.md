@@ -47,7 +47,7 @@ Ena is one AI agent for a micro-business's back office, on top of the owner's Ba
 | Correctness of money actions | No payment without passing the gate; every payment has exactly one receipt | The jury is a bank |
 | Explainability | Every number the owner sees comes from code; the LLM only restates it | Organisers' guidance: AI explains, a person decides |
 | Determinism | The stage run gives the same result every time (seeded data, cached replies) | No live debugging on stage |
-| Latency | Chat answer starts streaming in under ~3 s; demo questions cached | A 5–6 minute pitch |
+| Latency | Chat answer starts streaming in under ~3 s; demo questions cached | A 4 minute pitch |
 | Security | Secrets only in `.env`; the LLM never sees tokens; sandbox only | Rules and common sense |
 | Scale | One business, one owner, one laptop | It is a demo; see §18 for a pilot |
 
@@ -204,7 +204,7 @@ Worked example (synthetic): €8,000 wedding, 25% deposit (€2,000), costs 60% 
 
 ### Onboarding (proposal, 2026-11-28)
 
-**For the hackathon there is no onboarding screen.** The loop is what the jury scores, and the 5 to 6 pitch minutes go to the approval card and its receipt. Before the demo we activate the bocAPI subscription with `ena-boc subscribe` and `activate`, and Jinius and JCC are connected. On stage, one line covers it: "The owner connected the account and set a €500 limit in 5 minutes; Ena read 3 months of history." The chat opens on the first summary card (step 5), which shows the limit.
+**For the hackathon there is no onboarding screen.** The loop is what the jury scores, and the 4 pitch minutes go to the approval card and its receipt. Before the demo we activate the bocAPI subscription with `ena-boc subscribe` and `activate`, and Jinius and JCC are connected. On stage, one line covers it: "The owner connected the account and set a €500 limit in 5 minutes; Ena read 3 months of history." The chat opens on the first summary card (step 5), which shows the limit.
 
 The flow below is the product's set-up, kept as the answer when the jury asks how an owner starts. It is the "5 min" of plan.md's owner journey and runs in the same chat, one card per step:
 
@@ -453,7 +453,7 @@ Checkpoints:
 | LLM latency or outage on stage | Medium | Cached demo replies; backup video |
 | Venue network fails | Medium | Fixtures + cached replies + video |
 | Interviews give no numbers | Low | Keep placeholder numbers, label them as such |
-| Too many features for 5–6 minutes | High | One scenario; the event advance is 20 seconds or cut |
+| Too many features for 4 minutes | High | One scenario; the event advance is 20 seconds or cut |
 
 ---
 
@@ -476,4 +476,4 @@ Checkpoints:
 4. Demo business: bakery, or a caterer that also shows the event advance?
 5. Event advance: Must or Should? Cancellation limit for eligibility?
 6. Ask the BoC lending mentor: is the event advance a new product or a use of the Digital Business Loan?
-7. Do the 5–6 pitch minutes include the demo and Q&A?
+7. ~~Is the Q&A inside the 4 pitch minutes?~~ No: the 4 minutes include the demo, the Q&A is separate (2026-11-28)

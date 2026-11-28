@@ -51,7 +51,7 @@ One month of a bakery owner with Ena, replayed from the synthetic month. The amo
 | Area | What it covers | Owner |
 |---|---|---|
 | Software | The app, the gate, the API integrations, the repo | Roman |
-| Pitch on stage | The 5 to 6 minute talk: the problem, a live demo, the next step; answers to the jury | Youssef |
+| Pitch on stage | The 4 minute talk, live demo included, the jury's Q&A after it (2026-11-28): the problem, a live demo, the next step; answers to the jury | Youssef |
 | Presentation | Deck of 4 to 5 slides; mockups of the owner's screens (approval above the limit, receipts, forecast, credit offer) | Together |
 | Idea work | Positioning, business model canvas (who pays, how much, what BoC gains), the one number | Together |
 | Customer interviews | Finding micro-businesses, the interviews, numbers and quotes | Together |
@@ -74,7 +74,7 @@ Team: Roman, Youssef and Keith. Keith's area is still to agree.
 | Sun morning | Debug the app and polish the pitch |
 | Sun 14:00 to 15:00 | Final submission |
 | Sun 15:30 | Stop coding |
-| Sun 16:30 to 19:30 | Pitches, 5 to 6 minutes per team; winners 19:30 to 20:30 |
+| Sun 16:30 to 19:30 | Pitches, 4 minutes per team with the live demo (2026-11-28); winners 19:30 to 20:30 |
 
 ## Pitch hook
 
@@ -113,6 +113,6 @@ The organisers ask every team to measure one success metric. Ours: the owner's h
 - [ ] Send every member's GitHub username to the organisers (Roman `romamo`, Youssef `YoussefBouz`, Keith `keithmaina123`)
 - [ ] Register in the bocAPI sandbox, the Jinius integration environment and the JCC sandbox; run the Postman collections
 - [ ] F1 Form of Needs, due Friday 19:00: a mentor from BoC SME lending (does the Digital Business Loan fit micro-businesses; can it be applied for through an API in the sandbox or should we emulate it), plus a Jinius mentor
-- [ ] Ask the organisers: do the 5 to 6 minutes include the live demo and the jury's Q&A, or is Q&A separate and how long
+- [x] Ask the organisers: the jury's Q&A is separate from the 4 minutes, which include the live demo (2026-11-28)
 - [ ] About 5 customer interviews on Saturday morning: a photo studio and a bakery are lined up; find a barber and one or two more
 - [ ] Agree Keith's area: Demo, or Submission and organisers
