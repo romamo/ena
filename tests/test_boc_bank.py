@@ -20,10 +20,12 @@ from fastapi.testclient import TestClient
 
 from ena.agent import AgentRunner, AgentSettings
 from ena.connectors.boc import SAMPLE_CREDITOR, SAMPLE_CREDITOR_BANK, BocClient, BocSettings
-from ena.connectors.boc_bank import BocBank
+from ena.connectors.boc_bank import ACCOUNT_TTL, AccountReads, BocBank
+from ena.gate import BankUnavailable
 from ena.mcp_server import EnaTools, call_tool
 from ena.seed import LEAN_WEEK, synthetic_month
 from ena.server import ServeSettings, build, load_boc
+from ena.store import Store
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "boc"
 BASE = "https://sandbox.test/psd2"
@@ -49,12 +51,17 @@ class Sandbox:
     requests: list[httpx.Request] = field(default_factory=list)
     down: set[str] = field(default_factory=set)
     """Path endings answered with 500."""
+    refuse: dict[str, Any] = field(default_factory=dict)
+    """Path endings answered with 400 and this body."""
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         path = request.url.path
         if any(path.endswith(end) for end in self.down):
             return httpx.Response(500, json={"error": "sandbox down"})
+        for end, body in self.refuse.items():
+            if path.endswith(end):
+                return httpx.Response(400, json=body)
         if str(request.url) == SIGN:
             return httpx.Response(200, json=_fixture("payment_sign"))
         if path.endswith("/oauth2/token"):
@@ -442,3 +449,113 @@ def test_a_blank_code_is_no_confirmation_and_keeps_it_open(http: TestClient) -> 
     assert page.status_code == 400
     assert "<h1>No confirmation</h1>" in page.text
     assert http.get(f"/consents/{consent['card']['id']}").json()["card_kind"] == "consent"
+
+
+# The account's reads: few a day without the customer (error 037)
+
+REFUSED_037 = {
+    "fatalError": True,
+    "error": {
+        "code": "400",
+        "additionalDetails": [
+            {
+                "errorCode": "037",
+                "description": "The subscriptionId: sub-1 has reached the max number of requests"
+                " on API GET /psd2accounts/v1/accounts/351012345671/statement without the user"
+                " participation.",
+            }
+        ],
+    },
+}
+
+
+@dataclass
+class Clock:
+    now: dt.datetime = NOW
+
+    def __call__(self) -> dt.datetime:
+        return self.now
+
+
+@pytest.fixture
+def store() -> Iterator[Store]:
+    store = Store(":memory:")
+    yield store
+    store.close()
+
+
+def reads(sandbox: Sandbox, store: Store, clock: Clock, **changes: Any) -> AccountReads:
+    client = BocClient(
+        boc_settings(**changes), httpx.Client(transport=httpx.MockTransport(sandbox))
+    )
+    return AccountReads(BocBank.from_settings(client, clock), store, clock)
+
+
+def statements(sandbox: Sandbox) -> int:
+    return sum(r.url.path.endswith("/statement") for r in sandbox.requests)
+
+
+def test_a_read_is_served_again_until_it_is_old(store: Store) -> None:
+    sandbox, clock = Sandbox(), Clock()
+    first = reads(sandbox, store, clock).account()
+
+    clock.now = NOW + ACCOUNT_TTL - dt.timedelta(minutes=1)
+    # A restart reads the kept copy too: a new reader over the same store
+    assert reads(sandbox, store, clock).account() == first
+    assert statements(sandbox) == 1
+
+    clock.now = NOW + ACCOUNT_TTL
+    fresh = reads(sandbox, store, clock).account()
+    assert statements(sandbox) == 2
+    assert fresh.read_at == NOW + ACCOUNT_TTL
+    assert store.bank_account() == fresh
+
+
+def test_a_refused_statement_keeps_the_balance_fresh_and_the_last_lines(store: Store) -> None:
+    sandbox, clock = Sandbox(), Clock()
+    first = reads(sandbox, store, clock).account()
+    clock.now = NOW + ACCOUNT_TTL
+    sandbox.refuse = {"/statement": REFUSED_037}
+
+    served = reads(sandbox, store, clock).account()
+
+    assert (served.read_at, served.stale, served.lines_stale) == (NOW + ACCOUNT_TTL, False, True)
+    assert served.lines == first.lines
+    assert store.bank_account() == served
+
+
+def test_a_refused_balance_serves_the_last_copy_marked_stale(store: Store) -> None:
+    sandbox, clock = Sandbox(), Clock()
+    first = reads(sandbox, store, clock).account()
+    clock.now = NOW + ACCOUNT_TTL
+    sandbox.refuse = {"/balance": REFUSED_037}
+
+    assert reads(sandbox, store, clock).account() == first.model_copy(update={"stale": True})
+    assert store.bank_account() == first
+
+
+def test_a_first_read_with_a_refused_statement_shows_the_balance_and_no_lines(
+    store: Store,
+) -> None:
+    sandbox = Sandbox(refuse={"/statement": REFUSED_037})
+
+    served = reads(sandbox, store, Clock()).account()
+
+    assert (served.available_cents, served.lines, served.lines_stale) == (825_050, (), True)
+
+
+def test_a_refused_first_balance_read_fails_loudly(store: Store) -> None:
+    sandbox = Sandbox(refuse={"/balance": REFUSED_037})
+
+    with pytest.raises(BankUnavailable, match="037"):
+        reads(sandbox, store, Clock()).account()
+    assert store.bank_account() is None
+
+
+def test_another_accounts_copy_is_never_served(store: Store) -> None:
+    sandbox, clock = Sandbox(), Clock()
+    other = reads(sandbox, store, clock).account().model_copy(update={"account_id": "351092345672"})
+    store.keep_bank_account(other)
+
+    assert reads(sandbox, store, clock).account().account_id == ACCOUNT
+    assert statements(sandbox) == 2

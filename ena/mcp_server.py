@@ -54,7 +54,7 @@ from typing import Any, Literal, Protocol
 from claude_agent_sdk import McpSdkServerConfig, SdkMcpTool, ToolAnnotations, create_sdk_mcp_server
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
-from ena.gate import Clock, Gate, PaymentResult
+from ena.gate import BankUnavailable, Clock, Gate, PaymentResult
 from ena.models import (
     Actor,
     ApprovalRequest,
@@ -563,15 +563,32 @@ class EnaTools:
         """The live Bank of Cyprus sandbox account, shown as its own card."""
         if self._bank is None:
             raise ToolError("no bank account is connected: this demo runs on the stand-in bank")
-        account = self._bank.account()
+        try:
+            account = self._bank.account()
+        except BankUnavailable as error:
+            raise ToolError(str(error)) from error
+        return self._bank_result(account)
+
+    def _bank_result(self, account: BankAccount) -> BankAccountResult:
+        """The account as a result, and its card for the owner."""
         self._turn.cards.append(account)
+        notes = [
+            "A sample customer's sandbox account, not the synthetic business's: never add"
+            " its figures to the business's balance or forecast"
+        ]
+        if account.stale:
+            notes.append(
+                "the sandbox refused a fresh read: these figures are from"
+                f" {account.read_at:%d %b %H:%M} UTC, say so"
+            )
+        if account.lines_stale:
+            notes.append("the sandbox refused the statement today: the lines are an older copy")
         return BankAccountResult(
             source="Bank of Cyprus sandbox, live",
             account=account,
             available=None if account.available_cents is None else euros(account.available_cents),
             current=None if account.current_cents is None else euros(account.current_cents),
-            note="A sample customer's sandbox account, not the synthetic business's: never add"
-            " its figures to the business's balance or forecast",
+            note="; ".join(notes),
         )
 
     def list_receipts(self, limit: int) -> ReceiptsResult:
