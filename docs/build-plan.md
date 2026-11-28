@@ -120,7 +120,7 @@ One module (`ena/models.py`), written first by Roman (task 0.4). Amounts in euro
 | CardSale | id, amountCents, date, jccOrderId, status | From JCC callback |
 | Loan | id, instalmentCents, nextDueDate | Existing loan; read-only, never modified |
 | Forecast | weeks[]: {weekStart, openingCents, inCents, outCents, closingCents}, leanWeek, reason | Output of rules |
-| Event | id, customer, eventDate, priceCents, depositCents, costsCents, finalPaymentCents, status (booked / completed / cancelled) | For the event advance |
+| Event | id, customer, eventDate, priceCents, depositCents, costsCents, finalPaymentCents, status (booked / completed / cancelled), costsPaidDate, finalPaidDate | For the event advance; deposit + final payment = price; a completed event has both dates |
 | Offer | id, kind (reserve / loan / event_advance), amountCents, termDays, basis (numbers used), simulated | Output of rules |
 | ApprovalRequest | id, action, amountCents, reason, status (pending / approved / declined), createdAt, decidedAt | Created by the gate |
 | Receipt | id, at, actor (ena / owner), action, amountCents, ref (invoice, payment, offer), result, explanation | Append-only |
@@ -345,7 +345,7 @@ docs/                  plan, hackathon, interviews, this file, jinius-notes, jcc
 - **Rules:** each function has tests with fixed inputs and exact expected outputs (Keith). Run on every pull request.
 - **Gate:** below limit pays; above limit creates an approval; approve pays once; decline never pays; duplicate trigger returns the same receipt.
 - **Connectors:** parse every saved fixture into the data model.
-- **Chat:** 10 owner questions with expected answers from the seed data (task 6.7).
+- **Chat:** 11 owner questions with expected answers from the seed data (task 6.7), the event advance among them.
 - **End to end:** the replay runs the whole month with no errors; run before every rehearsal.
 
 ---

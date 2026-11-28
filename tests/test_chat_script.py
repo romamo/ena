@@ -1,4 +1,4 @@
-"""The chat test script (docs/build-plan.md §13): 10 owner questions on the seed month.
+"""The chat test script (docs/build-plan.md §13): 11 owner questions on the seed month.
 
 `chat_questions.json` holds each question in English and Greek, the day of November it
 is asked on, the invoices paid before it (through the gate, the owner approving any above
@@ -41,7 +41,7 @@ from ena.agent import (
 )
 from ena.gate import Gate
 from ena.mcp_server import TOOLS, EnaTools, Ledger, ReplayDay, build_server, call_tool
-from ena.seed import AMOUNTS, LEAN_WEEK, LOAN_DAY, RENT_DAY, synthetic_month
+from ena.seed import AMOUNTS, BOOKED_EVENT_ID, LEAN_WEEK, LOAN_DAY, RENT_DAY, synthetic_month
 from ena.store import Store
 
 MONTH = synthetic_month()
@@ -179,12 +179,18 @@ def test_the_expected_figures_follow_the_seed() -> None:
     assert gap > instalment  # the reserve alone does not cover it
     loan = -(-gap // LOAN_STEP) * LOAN_STEP
 
+    # The event advance on the lean Monday: the lean week leaves no spare cash, so the
+    # advance is the booked wedding's costs less its deposit, repaid from its final payment
+    wedding = next(event for event in MONTH.events if event.id == BOOKED_EVENT_ID)
+    advance = wedding.costs_cents - wedding.deposit_cents
+
     expected = {
         "balance": [paid_on_arrival[rent_day]],
         "rent-friday": [balance_through(LEAN_WEEK), LEAN_WEEK_CLOSING],
         "lean-week": [LEAN_WEEK_CLOSING, instalment],
         "reserve": [instalment],
         "loan": [loan],
+        "event-advance": [advance, wedding.final_payment_cents],
         "unpaid-invoices": [dairy, flour, dairy + flour],
         "pay-flour": [flour, AMOUNTS.auto_pay_limit_cents],
         "unmatched-payments": [rent, instalment],
@@ -197,8 +203,8 @@ def test_the_expected_figures_follow_the_seed() -> None:
     assert MONTH.loan.next_due_date.day == LOAN_DAY
 
 
-def test_the_script_has_ten_questions_on_real_tools_and_invoices() -> None:
-    assert len(QUESTIONS) == 10
+def test_the_script_has_eleven_questions_on_real_tools_and_invoices() -> None:
+    assert len(QUESTIONS) == 11
     assert len(BY_ID) == len(QUESTIONS)
     names = {spec.name for spec in TOOLS}
     invoice_ids = {invoice.id for invoice in MONTH.invoices}
