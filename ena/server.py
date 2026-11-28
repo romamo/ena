@@ -18,8 +18,9 @@ The app the demo runs, built from `.env` as each module reads it:
 - The chat agent (`ena/agent.py`, `ENA_*`) and the reply cache, in memory or in `--cache`
 - The JCC client (`JCC_*`) for `POST /jcc/callback`, and for the agent's
   `create_pay_link` when `JCC_RETURN_URL` is set too
-- The Jinius buyer's client (`JINIUS_*`) for `GET /jinius/invoices`, the dashboard's
-  "Read invoices from Jinius" button. It only reads: the month's invoices stay the seed's
+- The Jinius buyer's client (`JINIUS_*`) for the dashboard's Jinius tab: read the invoices
+  sent to the business, and the owner's approve and mark-paid taps on one. The month's
+  invoices stay the seed's: the chat never acts on Jinius
 - The built chat page (`--web web/dist`, from `npm run build`) on the same origin, for a
   host with no Vite dev server in front; `GET /health` answers 200 for the host's checks
 
@@ -59,13 +60,11 @@ from ena.api import create_app
 from ena.cache import ReplyCache
 from ena.connectors.boc import BocClient, BocSettings
 from ena.connectors.boc_bank import AccountReads, BocBank, check_redirect
-from ena.connectors.jcc import JccClient, JccSettings, JccUnavailable
+from ena.connectors.jcc import CYPRUS, JccClient, JccSettings, JccUnavailable
 from ena.connectors.jinius import (
     JiniusClient,
-    JiniusNotConfigured,
+    JiniusDesk,
     JiniusSettings,
-    PayableFeed,
-    read_payable,
 )
 from ena.dashboard import Dashboard
 from ena.gate import COMPLETED, ConsentBank, Gate, PaymentBank
@@ -197,10 +196,6 @@ def load_jinius(env_file: Path | None, environ: Mapping[str, str]) -> JiniusSett
     return from_values(JiniusSettings, values)
 
 
-def _no_jinius() -> PayableFeed:
-    raise JiniusNotConfigured(NO_JINIUS)
-
-
 def has_model_credential(environ: Mapping[str, str]) -> bool:
     return any(environ.get(name, "").strip() for name in CREDENTIAL_ENV)
 
@@ -305,13 +300,13 @@ def build(
         jcc_settings = settings.jcc
         http = httpx.AsyncClient(transport=jcc_transport, timeout=10.0)
     jinius_http: httpx.Client | None = None
-    read_jinius = _no_jinius
+    jinius_client: JiniusClient | None = None
     if settings.jinius is not None:
         jinius_http = httpx.Client(transport=jinius_transport, timeout=10.0)
-        jinius = JiniusClient(settings.jinius, jinius_http)
-
-        def read_jinius() -> PayableFeed:
-            return read_payable(jinius)
+        jinius_client = JiniusClient(settings.jinius, jinius_http)
+    # Jinius's records are real ones in its integration environment: the day is today's in
+    # Cyprus, not the synthetic month's
+    jinius = JiniusDesk(jinius_client, lambda: _now().astimezone(CYPRUS).date(), NO_JINIUS)
 
     jcc = JccClient(jcc_settings, http)
     tools = EnaTools(
@@ -332,7 +327,7 @@ def build(
         gate=gate,
         advances=Advances(store, gate, month.events, _now),
         dashboard=Dashboard(ledger, store),
-        jinius=read_jinius,
+        jinius=jinius,
     )
     if settings.jcc is None:
         _refuse_callbacks(app)
