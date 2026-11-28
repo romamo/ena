@@ -24,7 +24,13 @@ forecast, offers) and the receipts the gate returned for a payment asked this tu
 alone let a reply say "paid" (`ena/agent.py`); a receipt `list_receipts` only read does
 not. `build_server` puts them on an in-process MCP server for the Claude Agent SDK.
 
-The event advance's spare cash is what the forecast keeps above its threshold (the
+An offer's receipt is written once per offer, and an offer's id carries its amount, so a
+loan or an advance offered again at another amount (the forecast moved) gets its own
+receipt, and `list_receipts` never shows an amount the card no longer does.
+
+The event advance asks the rule whether the event is eligible before it reads the
+forecast, so a refusal that needs no forecast (a completed event) is given even on a day
+the forecast has no history yet. Its spare cash is what the forecast keeps above its threshold (the
 instalment plus the buffer) up to the week the event's costs fall due: the lowest closing
 from this week to that one, less the threshold, and never below zero.
 
@@ -62,7 +68,13 @@ from ena.models import (
 )
 from ena.replay import TZ, DayStarted, ReplayEvent
 from ena.rules.books import Books, match_books, match_invoices
-from ena.rules.events import AdvanceRefusal, EventPattern, event_advance, event_pattern
+from ena.rules.events import (
+    AdvanceRefusal,
+    EventPattern,
+    advance_eligibility,
+    event_advance,
+    event_pattern,
+)
 from ena.rules.forecast import CashForecast, ScheduledFlow, euros, forecast_cash
 from ena.rules.loan import loan_offer
 from ena.rules.reserve import reserve_offer
@@ -625,11 +637,10 @@ class EnaTools:
         event = self._ledger.event(event_id)
         events = self._ledger.events()
         today = self._ledger.today()
-        spare = 0
-        pattern = event_pattern(events)
-        if pattern is not None:
-            costs_date = event.event_date - dt.timedelta(days=pattern.costs_days_before_max)
-            spare = _spare_cents(self._ledger.cash_forecast(), costs_date)
+        eligible = advance_eligibility(event, events, today=today)
+        if isinstance(eligible, AdvanceRefusal):
+            return OfferResult(offer=None, amount=None, note=f"No advance: {eligible.reason}")
+        spare = _spare_cents(self._ledger.cash_forecast(), eligible.costs_date(event))
         outcome = event_advance(event, events, spare_cents=spare, today=today)
         if isinstance(outcome, AdvanceRefusal):
             return OfferResult(offer=None, amount=None, note=f"No advance: {outcome.reason}")

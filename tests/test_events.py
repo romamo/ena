@@ -4,7 +4,13 @@ import pytest
 from pydantic import ValidationError
 
 from ena.models import Event, EventStatus, OfferKind
-from ena.rules.events import AdvanceRefusal, event_advance, event_pattern
+from ena.rules.events import (
+    AdvanceRefusal,
+    EventPattern,
+    advance_eligibility,
+    event_advance,
+    event_pattern,
+)
 
 TODAY = dt.date(2026, 11, 28)
 WEDDING_DAY = dt.date(2026, 12, 19)
@@ -60,7 +66,7 @@ def test_the_worked_example_offers_1800_for_16_days() -> None:
     assert not isinstance(offer, AdvanceRefusal)
     assert offer.kind is OfferKind.EVENT_ADVANCE
     assert offer.simulated is True
-    assert offer.id == "advance-georgiou"
+    assert offer.id == "advance-georgiou-180000"
     assert offer.amount_cents == 180_000
     assert offer.term_days == 16
     assert dict(offer.basis) == {
@@ -190,3 +196,18 @@ def test_a_completed_event_needs_both_dates() -> None:
 def test_a_booked_event_has_no_final_paid_date() -> None:
     with pytest.raises(ValidationError, match="booked event has no final_paid_date"):
         Event.model_validate({**WEDDING.model_dump(), "final_paid_date": TODAY})
+
+
+def test_eligibility_needs_no_spare_cash_and_names_the_costs_date() -> None:
+    pattern = advance_eligibility(WEDDING, HISTORY, today=TODAY)
+    assert isinstance(pattern, EventPattern)
+    assert pattern.costs_date(WEDDING) == dt.date(2026, 12, 12)
+    refusal = advance_eligibility(HISTORY[0], HISTORY, today=TODAY)
+    assert refusal == AdvanceRefusal(event_id="past-0", reason="the event is completed, not booked")
+
+
+def test_an_advance_of_another_amount_is_another_offer() -> None:
+    low = event_advance(WEDDING, HISTORY, spare_cents=100_000, today=TODAY)
+    high = event_advance(WEDDING, HISTORY, spare_cents=0, today=TODAY)
+    assert not isinstance(low, AdvanceRefusal) and not isinstance(high, AdvanceRefusal)
+    assert (low.id, high.id) == ("advance-georgiou-180000", "advance-georgiou-280000")

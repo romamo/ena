@@ -67,7 +67,7 @@ def test_the_offer_is_simulated_and_explains_itself() -> None:
     assert offer.kind is OfferKind.LOAN
     assert offer.simulated is True
     assert offer.term_days == LOAN_TERM_DAYS == 730
-    assert offer.id == "loan-20261109"
+    assert offer.id == "loan-20261109-2000000"
     assert dict(offer.basis) == {
         "gap_cents": 2_000_001,
         "rounded_gap_cents": 2_050_000,
