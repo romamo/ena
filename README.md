@@ -14,7 +14,7 @@ Ena is for micro-businesses and the self-employed who bank with Bank of Cyprus. 
 |---|---|---|---|---|
 | Supplier invoice | Reads the invoices sent to the business and marks one paid | Jinius (`GET /v3/invoices/payable`) | [ena/connectors/jinius.py](ena/connectors/jinius.py) | The Jinius integration environment with credentials; without them, or when Jinius can't be reached, the saved responses in [fixtures/jinius/](fixtures/jinius/) |
 | Payment | Pays at or below the owner's limit, asks for approval above it, and writes a receipt for every payment | bocAPI payments (sign, initiate, consent, execute to `CPLT`) | The gate [ena/gate.py](ena/gate.py) with [ena/store.py](ena/store.py); the bank calls in [ena/connectors/boc.py](ena/connectors/boc.py) | The gate runs in the tests against a stand-in bank; the bocAPI payment runs on the sandbox by hand with `ena-boc` (below). The two are not wired together yet |
-| Books | Matches statement lines to paid invoices and to card sales | bocAPI statement; JCC card payments | [ena/rules/books.py](ena/rules/books.py); the statement call in [ena/connectors/boc.py](ena/connectors/boc.py) | The synthetic month. JCC has no connector yet: its sandbox responses are saved in [fixtures/jcc/](fixtures/jcc/), see [docs/jcc-notes.md](docs/jcc-notes.md) |
+| Books | Matches statement lines to paid invoices and to card sales | bocAPI statement; JCC card payments (callback, `getOrderStatusExtended.do`) | [ena/rules/books.py](ena/rules/books.py); the statement call in [ena/connectors/boc.py](ena/connectors/boc.py); the JCC callback `POST /jcc/callback` in [ena/api.py](ena/api.py) with [ena/connectors/jcc.py](ena/connectors/jcc.py), which books a confirmed card payment once | The synthetic month. The JCC callback runs in the tests on the saved sandbox responses in [fixtures/jcc/](fixtures/jcc/); see [docs/jcc-notes.md](docs/jcc-notes.md) for the live sandbox |
 | Cash forecast | Projects 8 weeks of cash and flags the first lean week | bocAPI balance and statement | [ena/rules/forecast.py](ena/rules/forecast.py) | The synthetic month: week 3 (16 November) is lean |
 | Credit offer | Sets money aside for the loan instalment, or pre-fills a Digital Business Loan | None: the loan offer is simulated, since the sandbox has no lending API | [ena/rules/reserve.py](ena/rules/reserve.py), [ena/rules/loan.py](ena/rules/loan.py) | The forecast's numbers |
 
@@ -33,7 +33,7 @@ uv sync
 uv run pytest
 ```
 
-The tests cover the rules, the gate, both connectors, the synthetic month and its replay, using hand-built cases and the saved sandbox responses; none of them calls a sandbox. The last line reports every test passed and none failed.
+The tests cover the rules, the gate, the bocAPI, Jinius and JCC connectors, the JCC callback, the synthetic month and its replay, using hand-built cases and the saved sandbox responses; none of them calls a sandbox. The last line reports every test passed and none failed.
 
 Then replay the synthetic month, 1 to 30 November, and print each event:
 
