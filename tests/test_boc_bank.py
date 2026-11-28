@@ -419,3 +419,16 @@ def test_an_execute_that_breaks_off_says_check_the_bank_and_cancel_cannot_fail_i
 def test_a_malformed_payee_is_refused(changes: dict[str, Any], message: str) -> None:
     with pytest.raises(ValueError, match=message):
         boc_settings(**changes)
+
+
+def test_a_trailing_slash_confirms_without_a_redirect(http: TestClient) -> None:
+    # A redirect would carry the API's own address, not the page's, and strand the browser
+    consent = _card(sse(http.post("/chat", json={"text": f"pay {DAIRY.id}"}).text))
+
+    page = http.get("/boc/consent/", params={"code": "code-1"}, follow_redirects=False)
+
+    assert page.status_code == 200
+    assert "<h1>Paid</h1>" in page.text
+    assert "<a href='/'>Back to Ena</a>" in page.text
+    receipt = http.get(f"/consents/{consent['card']['id']}").json()["card"]
+    assert receipt["result"] == "paid"

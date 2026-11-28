@@ -8,3 +8,4 @@
 ### Fixed
 
 - The page's dev server proxies `/offers`, so Accept on an event advance reaches the API
+- After the bank's confirmation the browser stays on the chat page's address: the dev server keeps the page's Host when it proxies the API, `/boc/consent/` with a trailing slash is answered without a redirect, and the result page links back to the chat

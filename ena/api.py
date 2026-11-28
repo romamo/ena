@@ -168,6 +168,7 @@ def create_app(
                 raise HTTPException(status_code=409, detail=str(error)) from error
 
         @app.get("/boc/consent", response_class=HTMLResponse)
+        @app.get("/boc/consent/", response_class=HTMLResponse, include_in_schema=False)
         async def boc_consent(
             code: str | None = None,
             error: str | None = None,
@@ -280,7 +281,7 @@ def _page(status: int, title: str, message: str, *, close: bool = False) -> HTML
         f"<title>Ena: {html.escape(title)}</title>"
         "<style>body{font:16px system-ui,sans-serif;margin:2rem 1rem;max-width:32rem}</style>"
         f"</head><body><h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>"
-        "<p>Go back to Ena: the chat shows the receipt.</p>"
+        "<p><a href='/'>Back to Ena</a>: the chat shows the receipt.</p>"
         f"{script}</body></html>"
     )
     return HTMLResponse(body, status_code=status)
