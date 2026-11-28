@@ -307,6 +307,8 @@ def test_a_reply_about_a_past_approval_shows_no_pending_card(api: Api, reply: st
         "Tap Approve on its card.",
         "Χρειάζεται την έγκρισή σας.",  # "It needs your approval."
         "Πατήστε για να την εγκρίνετε.",  # noqa: RUF001 - "Tap to approve it."
+        "Εκκρεμούν οι εγκρίσεις σας.",  # noqa: RUF001 - "Your approvals are pending."
+        "ΕΓΚΡΙΝΕΤΕ ΤΗΝ ΠΛΗΡΩΜΗ.",  # noqa: RUF001 - "APPROVE THE PAYMENT."
     ],
 )
 def test_a_reply_asking_for_an_approval_shows_the_pending_card(api: Api, reply: str) -> None:

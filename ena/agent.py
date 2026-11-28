@@ -219,8 +219,9 @@ def claims_payment(text: str) -> bool:
 
 
 _SENTENCE = re.compile(r"(?<=[.!?;])\s+|\n+")
-# Greek letters here are meant: "έγκριση" (approval), "εγκρίνετε" (you approve)
-_APPROVAL = re.compile(r"\bapprov(?:al|als|e)\b|[εέ]γκρισ|εγκρίν", re.IGNORECASE)
+# Greek letters here are meant: "έγκριση", "εγκρίσεις" (approval, approvals),
+# "εγκρίνετε" (you approve), with or without the accent (capitals drop it)
+_APPROVAL = re.compile(r"\bapprov(?:al|als|e)\b|[εέ]γκρισ|εγκρίσ|εγκριν|εγκρίν", re.IGNORECASE)
 """A reply that asks for an approval, in English or Greek; not "approved" or "εγκρίθηκε"."""
 
 
