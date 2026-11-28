@@ -3,10 +3,13 @@
 Receipts are append-only: the store can insert and read them, never change or delete one.
 At most one receipt exists per ref, so a payment can never be recorded twice.
 An approval request is inserted pending and decided once; its ref is kept beside it.
+A payment attempt is recorded for a ref before the bank is called, also append-only,
+so a payment whose outcome is unknown is never sent twice.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +31,10 @@ CREATE TABLE IF NOT EXISTS approvals (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_pending_approval_per_ref
     ON approvals (ref) WHERE status = 'pending';
+CREATE TABLE IF NOT EXISTS attempts (
+    ref TEXT PRIMARY KEY,
+    at TEXT NOT NULL
+);
 """
 
 
@@ -70,6 +77,17 @@ class Store:
         """Every receipt, oldest first."""
         rows = self._db.execute("SELECT body FROM receipts ORDER BY seq").fetchall()
         return [Receipt.model_validate_json(body) for (body,) in rows]
+
+    # Payment attempts: insert and read only
+
+    def add_attempt(self, ref: str, at: dt.datetime) -> None:
+        """Record that the bank is about to be called for `ref`; fails if it already was."""
+        with self._db:
+            self._db.execute("INSERT INTO attempts (ref, at) VALUES (?, ?)", (ref, at.isoformat()))
+
+    def has_attempt(self, ref: str) -> bool:
+        row = self._db.execute("SELECT 1 FROM attempts WHERE ref = ?", (ref,)).fetchone()
+        return row is not None
 
     # Approval requests
 

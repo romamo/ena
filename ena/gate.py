@@ -5,7 +5,9 @@ At or below the business's auto-pay limit the gate pays and writes a receipt by 
 above it, it creates a pending approval request that only the owner's `approve` or
 `decline` settles. Each settled payment has exactly one receipt, and a ref that has one
 is never paid again: a duplicate trigger gets the same receipt back, and a failed
-payment is not retried.
+payment is not retried. An attempt is recorded before the bank is called, so when the
+call raises and its outcome is unknown, the next trigger for the ref fails loudly
+instead of paying again.
 """
 
 from __future__ import annotations
@@ -29,7 +31,8 @@ class PaymentResult(StrEnum):
 
 
 class GateError(RuntimeError):
-    """A request the gate refuses: an unknown or already decided approval."""
+    """A request the gate refuses: an unknown or already decided approval, or a ref
+    whose earlier bank call ended without a receipt."""
 
 
 class PaymentBank(Protocol):
@@ -66,6 +69,8 @@ class Gate:
         existing = self._store.receipt_for(ref)
         if existing is not None:
             return existing
+        if self._store.has_attempt(ref):
+            raise GateError(f"payment for {ref} may have gone out: check the bank before retrying")
         pending = self._store.pending_approval_for(ref)
         if pending is not None:
             return pending
@@ -129,6 +134,7 @@ class Gate:
         return decided, stored.ref, now
 
     def _execute(self, actor: Actor, action: str, amount_cents: int, ref: str, why: str) -> Receipt:
+        self._store.add_attempt(ref, self._now())
         status = self._bank.pay(action, amount_cents, ref)
         if status == COMPLETED:
             result = PaymentResult.PAID

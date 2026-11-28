@@ -26,15 +26,23 @@ BUSINESS = Business(
 )
 
 
+class BankDown(RuntimeError):
+    """The bank call broke off: whether the money went out is unknown."""
+
+
 @dataclass
 class FakeBank:
-    """Answers every payment with `status` and records each call."""
+    """Answers every payment with `status` and records each call; raises once when `down`."""
 
     status: str = "CPLT"
+    down: bool = False
     calls: list[tuple[str, int, str]] = field(default_factory=list)
 
     def pay(self, action: str, amount_cents: int, ref: str) -> str:
         self.calls.append((action, amount_cents, ref))
+        if self.down:
+            self.down = False
+            raise BankDown("connection reset")
         return self.status
 
 
@@ -296,6 +304,46 @@ def test_an_unknown_approval_fails(gate: Gate, store: Store, bank: FakeBank) -> 
     assert bank.calls == []
 
 
+# A bank call that raises: never paid twice
+
+MAY_HAVE_GONE_OUT = "payment for inv-1 may have gone out: check the bank before retrying"
+
+
+def test_a_raising_bank_on_the_auto_path_blocks_the_next_trigger(
+    gate: Gate, store: Store, bank: FakeBank
+) -> None:
+    bank.down = True
+    with pytest.raises(BankDown):
+        gate.request_payment("pay_invoice", 12_000, "inv-1")
+
+    with pytest.raises(GateError) as error:
+        gate.request_payment("pay_invoice", 12_000, "inv-1")
+
+    assert str(error.value) == MAY_HAVE_GONE_OUT
+    assert store.has_attempt("inv-1")
+    assert store.receipts() == []
+    assert len(bank.calls) == 1
+
+
+def test_a_raising_bank_on_the_approve_path_blocks_the_next_trigger(
+    gate: Gate, store: Store, bank: FakeBank
+) -> None:
+    request = _pending(gate)
+    bank.down = True
+    with pytest.raises(BankDown):
+        gate.approve(request.id)
+
+    with pytest.raises(GateError) as error:
+        gate.request_payment("pay_invoice", 124_000, "inv-17")
+    with pytest.raises(GateError, match="already approved"):
+        gate.approve(request.id)
+
+    assert str(error.value) == MAY_HAVE_GONE_OUT.replace("inv-1", "inv-17")
+    assert store.has_attempt("inv-17")
+    assert store.receipts() == []
+    assert len(bank.calls) == 1
+
+
 # Strict input
 
 
@@ -328,7 +376,7 @@ def test_a_naive_clock_is_refused(store: Store, bank: FakeBank) -> None:
 # The store: receipts are append-only
 
 
-def test_the_store_has_no_api_to_change_or_delete_a_receipt() -> None:
+def test_the_store_has_no_api_to_change_or_delete_a_receipt_or_an_attempt() -> None:
     public = {name for name in vars(Store) if not name.startswith("_")}
 
     assert public == {
@@ -336,6 +384,8 @@ def test_the_store_has_no_api_to_change_or_delete_a_receipt() -> None:
         "add_receipt",
         "receipt_for",
         "receipts",
+        "add_attempt",
+        "has_attempt",
         "add_approval",
         "approval",
         "pending_approval_for",
