@@ -10,11 +10,27 @@ Looked around the portal while logged in; no API call made yet.
 - **Auth:** Keycloak, realm `platform-integration`. Token endpoint is the standard Keycloak one: `https://b2b.integration.platform.cy/auth/realms/platform-integration/protocol/openid-connect/token`; the realm allows `client_credentials` (VERIFIED from its OpenID configuration). The portal itself uses the public client `b2b-portal-client`
 - **API client:** Settings → Developer already holds a Client ID and Client Secret for DUMMY (with Refresh and Delete buttons). Copy them into `.env` from that page; never into the repo or chat
 - **Webhooks exist:** the same page takes up to 3 **Callback URLs**, each with a secret key. This answers the "webhooks: UNKNOWN" row in section 5; payloads and events are still UNKNOWN (guide 6). Polling stays the plan until a callback is seen
-- **Portal API shape:** the portal calls gRPC-style paths `POST /api/cy.jinius.b2b_orchestration.v1.<Service>/<Method>` (for example `IntegrationServiceOrchestration/GetClient`, `OutboundServiceOrchestration/GetCallBackUrlsForLegalEntity`). Whether the public integration API is the same surface is UNKNOWN until guide 6
+- **Portal API shape:** the portal calls gRPC-style paths `POST /api/cy.jinius.b2b_orchestration.v1.<Service>/<Method>` (for example `IntegrationServiceOrchestration/GetClient`, `OutboundServiceOrchestration/GetCallBackUrlsForLegalEntity`). It is **not** the integration API: see the token test below
 - **Payments (Settings → Payments):** two Get Paid IBANs, a BoC one (Unverified, default) and an AstroBank one (Disabled). **Pay Others with 1bank: "Connection expired"**, asking for a B2B Company UserID to re-authorise. No "mock payment settings" control is visible; that is guide 4, which we do not have yet
 - **Activity:** invoices and remittances are all zero. Subscription shows no plan and no billing
 - **Ecosystem:** 281 businesses in the test directory (for example "AB Supplies Ltd", "Alpha Supermarkets", "Bank of Cyprus - Test"); invoices can only go to a business on Jinius, so the supplier for our demo is either a second entity of ours or one of these
-- **Still missing:** the six guides (no link in the portal; the "How can I…" help links are empty), and a second legal entity to act as the supplier ("Register new business" on the dashboard)
+- **Still missing:** the six guides (no link in the portal; the "How can I…" help links are empty)
+
+### Token test (2026-11-28)
+
+- `client_credentials` with DUMMY's Client ID and Secret: **200**. `expires_in` 300 (5 minutes), `refresh_expires_in` 0 (no refresh token), `scope` "profile email"
+- Claims: `iss` is the realm above, `azp` and `client_id` are the Client ID, and a custom `legalEntity` claim holds the legal entity's id (here equal to the Client ID). So a token acts for exactly one legal entity: the supplier needs its own client
+- The same token on two read calls of the portal API (`LegalEntityServiceOrchestration/GetLegalEntityOfUser`, `IntegrationServiceOrchestration/GetClient`): **403** with an empty body. The integration API is a different surface, so its host and paths stay UNKNOWN until guide 6
+- For the connector: fetch a fresh token when the old one has under a minute left; 5 minutes is shorter than one demo run
+
+### Supplier entity (2026-11-28)
+
+- Registered **Ena Flour Mill Ltd** ("Register new business" on the dashboard) under the same login as DUMMY; the business switcher in the header lists both, so one user can act as buyer and supplier
+- Wizard: Business Details (made-up registration number, TIN and VAT; Food, Beverages or Tobacco → Grain mill products; "Registration number already exists" if another team took the number), Subscription, Documents, Validate Account
+- **Plans:** invoice API ("Automate invoice management with API") only on **Enterprise** (€75/month) and Enterprise Max (€150/month); remittance API from Premium (€50) up. A 1-month free trial; picked Enterprise. DUMMY shows no plan at all yet has an API client, so the integration environment may not enforce plans (UNKNOWN)
+- **Documents:** only the IBAN certificate is required; a labelled placeholder PDF was accepted. Board Resolution and SEPA mandate are optional ("or send a hard copy by post")
+- **Validate Account:** the supplier's IBAN is checked for a valid mod-97 checksum (the BoC docs' sample `CY11002003510000000012345671` fails it; a made-up `CY80002001950000357072811260` passes), plus a checkbox stating a €1 verification transfer to JINIUS LTD was made
+- **Result:** "under review … within the next two business days". Until approved the entity has only Dashboard, Contact Jinius and Report Content: no invoices, no Developer page, no API client. Approval asked of the Jinius mentors (#26)
 
 ## 1. Sources
 
@@ -51,13 +67,13 @@ Jinius is a Bank of Cyprus B2B platform: e-invoicing between registered companie
 `.env.example` names (values never committed):
 
 ```
-JINIUS_BASE_URL=            # integration API base, UNKNOWN until guide 1/6
-JINIUS_AUTH_URL=            # token endpoint, UNKNOWN
-JINIUS_BUYER_CLIENT_ID=
-JINIUS_BUYER_CLIENT_SECRET=
-JINIUS_SUPPLIER_CLIENT_ID=      # second test entity that issues invoices
+JINIUS_TOKEN_URL=https://b2b.integration.platform.cy/auth/realms/platform-integration/protocol/openid-connect/token
+JINIUS_CLIENT_ID=               # buyer: DUMMY (in .env since 2026-11-28)
+JINIUS_CLIENT_SECRET=
+JINIUS_SUPPLIER_CLIENT_ID=      # Ena Flour Mill Ltd, once Jinius approves it (#26)
 JINIUS_SUPPLIER_CLIENT_SECRET=
-JINIUS_DEBTOR_ACCOUNT=      # buyer's BoC account number for remittance files
+JINIUS_BASE_URL=                # integration API base, UNKNOWN until guide 6
+JINIUS_DEBTOR_ACCOUNT=          # buyer's BoC account number for remittance files
 ```
 
 ## 4. The six guides, in order
@@ -75,7 +91,7 @@ None of the six is public; the Technical Specifications list only their titles. 
 
 | Need | Method, path | Key fields | Status |
 |---|---|---|---|
-| Get a token | UNKNOWN | Client ID, Client Secret | UNKNOWN (guide 2/3) |
+| Get a token | `POST https://b2b.integration.platform.cy/auth/realms/platform-integration/protocol/openid-connect/token`, form `grant_type=client_credentials` | Client ID, Client Secret | VERIFIED 2026-11-28 (section 0): 5-minute token, no refresh, one legal entity per client |
 | Supplier submits an invoice or credit note (to seed the demo) | UNKNOWN | invoice number, issue date, due date, buyer, business unit, currency, line items (description, quantity, price, tax, discount), file, supporting documents (up to 15) | Operation exists (Help Center); path and field names UNKNOWN |
 | Buyer lists incoming invoices | UNKNOWN | portal filters suggest: invoice number, currency, issue date range, due date range, company, recipient business unit, status | UNKNOWN whether the API exposes it; the public docs describe the integration as "submit invoices and credit notes", and say both sides can review and settle from their ERP |
 | Read one invoice | UNKNOWN | amounts, VAT per line, due date, outstanding amount, history | UNKNOWN |
@@ -86,7 +102,7 @@ None of the six is public; the Technical Specifications list only their titles. 
 | Supplier accepts a pending payment | UNKNOWN | approve or reject | Exists in the portal; with two test entities we can accept it ourselves |
 | Payment status | UNKNOWN | remittance status (below) | Statuses VERIFIED; read path UNKNOWN |
 | Remittance advice for the supplier | UNKNOWN | credit IBAN, payment reference, amount, invoices paid with amounts | Portal Receive tab, emailed link, Excel/CSV export; API UNKNOWN |
-| Webhooks | UNKNOWN | | Not mentioned publicly; Jinius sends email and in-app notifications. Plan on **polling** |
+| Webhooks | Settings → Developer → Callback URLs (up to 3, each with a secret key) | | Exist (section 0); events and payload UNKNOWN until guide 6. Plan on **polling** until a callback is seen |
 
 **Invoice statuses**: Draft, Submitted, Pending Approval (buyer confirmed receipt), Approved, Rejected (with reason), Paid, Voided. An invoice sent through an integration that gets rejected is voided and resent under a new number.
 
