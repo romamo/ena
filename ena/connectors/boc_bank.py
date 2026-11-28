@@ -13,6 +13,11 @@ Errors become the gate's: an initiate or a code exchange that fails is `BankUnav
 (nothing was paid), an execute call that breaks off or answers something unreadable is
 `BankOutcomeUnknown` (the payment may have gone out).
 
+`AccountReads` stands between the agent and `account`: the sandbox allows only a few
+account reads a day without the customer (error 037, docs/boc-notes.md §4), so a read is
+kept in the store and served for `ACCOUNT_TTL`, and when the sandbox refuses a fresh read
+the last copy is served, marked stale.
+
 `account` reads the same account's balance and its statement since `STATEMENT_SINCE`: a
 sample customer's account, shown beside the synthetic month, never mixed into it.
 """
@@ -20,6 +25,7 @@ sample customer's account, shown beside the synthetic month, never mixed into it
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Literal
@@ -43,6 +49,9 @@ from ena.connectors.boc import (
 )
 from ena.gate import BankOutcomeUnknown, BankUnavailable, Executed, Initiated
 from ena.models import BankAccount, BankLine
+from ena.store import Store
+
+log = logging.getLogger(__name__)
 
 STATEMENT_SINCE = dt.date(2020, 1, 1)
 """The sandbox's sample statement lines are dated February 2020 (read 2026-11-28): a
@@ -53,6 +62,10 @@ MAX_LINES = 10
 _BANK_ERRORS = (BocError, httpx.HTTPError, ValidationError)
 """What a bocAPI call raises when the bank refuses, can't be reached, or answers in a shape
 the client doesn't read."""
+
+ACCOUNT_TTL = dt.timedelta(hours=6)
+"""How long a read is served before the next one: at most 4 reads a day, the cap PSD2 sets
+for reads without the customer."""
 
 CONSENT_PATH = "/boc/consent"
 """Ena's route the owner's browser comes back to after confirming a payment in BoC."""
@@ -95,6 +108,11 @@ class BocBank:
             raise ValueError(f"set {' and '.join(missing)} in .env (uv run ena-boc activate)")
         check_redirect(settings)
         return cls(client, SubscriptionId(subscription), AccountId(account), clock)
+
+    @property
+    def account_id(self) -> str:
+        """The account Ena pays from and reads."""
+        return str(self._debtor)
 
     def initiate(self, action: str, amount_cents: int, ref: str) -> Initiated:
         order = PaymentOrder(
@@ -144,6 +162,43 @@ class BocBank:
             read_at=self._clock(),
             lines=tuple(_line(row) for row in newest[:MAX_LINES]),
         )
+
+
+class AccountReads:
+    """The account as the agent reads it: a kept copy while it is fresh, a new read after
+    `ttl`, and the last copy, marked stale, when the sandbox refuses a new read."""
+
+    def __init__(
+        self,
+        bank: BocBank,
+        store: Store,
+        clock: Callable[[], dt.datetime],
+        ttl: dt.timedelta = ACCOUNT_TTL,
+    ) -> None:
+        if ttl <= dt.timedelta(0):
+            raise ValueError(f"the read's lifetime must be positive, got {ttl}")
+        self._bank = bank
+        self._store = store
+        self._clock = clock
+        self._ttl = ttl
+
+    def account(self) -> BankAccount:
+        kept = self._store.bank_account()
+        if kept is not None and kept.account_id != self._bank.account_id:
+            kept = None  # another account's copy: BOC_ACCOUNT_ID changed
+        if kept is not None and self._clock() - kept.read_at < self._ttl:
+            return kept
+        try:
+            fresh = self._bank.account()
+        except _BANK_ERRORS as error:
+            if kept is None:
+                raise
+            log.warning(
+                "the sandbox refused a fresh account read, serving the last copy: %s", error
+            )
+            return kept.model_copy(update={"stale": True})
+        self._store.keep_bank_account(fresh)
+        return fresh
 
 
 def check_redirect(settings: BocSettings) -> None:

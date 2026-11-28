@@ -50,7 +50,7 @@ from ena.agent import AgentError, AgentRunner, AgentSettings, Chat, ClaudeAgent
 from ena.api import create_app
 from ena.cache import ReplyCache
 from ena.connectors.boc import BocClient, BocSettings
-from ena.connectors.boc_bank import BocBank, check_redirect
+from ena.connectors.boc_bank import AccountReads, BocBank, check_redirect
 from ena.connectors.jcc import JccClient, JccSettings, JccUnavailable
 from ena.dashboard import Dashboard
 from ena.gate import COMPLETED, ConsentBank, Gate, PaymentBank
@@ -216,7 +216,7 @@ def build(
             raise ValueError("pass a bank or the bocAPI settings, not both")
         boc_http = httpx.Client(transport=boc_transport, timeout=30.0)
         boc_bank = BocBank.from_settings(BocClient(settings.boc, boc_http), _now)
-        bank, reader = boc_bank, boc_bank
+        bank, reader = boc_bank, AccountReads(boc_bank, store, _now)
         log.info("payments go through the bocAPI sandbox, from account %s", settings.boc.account_id)
     elif bank is None:
         log.warning(SIMULATED_PAYMENTS)

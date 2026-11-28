@@ -316,6 +316,8 @@ class BankAccount(_Entity):
     read_at: AwareDatetime
     lines: tuple[BankLine, ...]
     """Newest first."""
+    stale: Flag = False
+    """The sandbox refused a fresh read, so this is the last copy, as of `read_at`."""
 
 
 Card = ApprovalRequest | BankConsent | Receipt | Forecast | Offer | BankAccount

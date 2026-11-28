@@ -515,6 +515,8 @@ def test_the_store_has_no_api_to_change_or_delete_a_receipt_or_an_attempt() -> N
         "consent",
         "open_consent",
         "close_consent",
+        "keep_bank_account",
+        "bank_account",
     }
 
 

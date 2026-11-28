@@ -58,6 +58,8 @@ export type AccountCard = {
   current_cents: number | null;
   read_at: IsoDateTime;
   lines: BankLine[];
+  /** The sandbox refused a fresh read: the last copy, as of `read_at`. */
+  stale: boolean;
 };
 
 export type ForecastWeek = {

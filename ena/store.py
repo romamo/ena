@@ -15,6 +15,8 @@ A bank consent (a payment the bank holds until the owner confirms it there) is k
 the bank's payment id and the reason the gate paid; it is open until its receipt is
 written, closed in the same transaction, and at most one is open at a time, since the
 bank's redirect after a confirmation names no payment (docs/boc-notes.md §4).
+The last read of the bank account is kept, one copy that each read replaces, so a
+restart doesn't spend one of the few reads the bank allows a day.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from ena.models import (
     AdvanceStatus,
     ApprovalRequest,
     ApprovalStatus,
+    BankAccount,
     BankConsent,
     CardSale,
     Offer,
@@ -71,6 +74,10 @@ CREATE TABLE IF NOT EXISTS consents (
     body TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_consent ON consents (open) WHERE open = 1;
+CREATE TABLE IF NOT EXISTS bank_account (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    body TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS card_sales (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
@@ -255,6 +262,21 @@ class Store:
                 "INSERT INTO receipts (id, ref, body) VALUES (?, ?, ?)",
                 (receipt.id, receipt.ref, receipt.model_dump_json()),
             )
+
+    # The bank account's last read
+
+    def keep_bank_account(self, account: BankAccount) -> None:
+        """Keep the latest read, replacing the one before."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO bank_account (id, body) VALUES (1, ?)"
+                " ON CONFLICT (id) DO UPDATE SET body = excluded.body",
+                (account.model_dump_json(),),
+            )
+
+    def bank_account(self) -> BankAccount | None:
+        row = self._db.execute("SELECT body FROM bank_account WHERE id = 1").fetchone()
+        return None if row is None else BankAccount.model_validate_json(row[0])
 
     # Approval requests
 

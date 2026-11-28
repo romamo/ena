@@ -247,7 +247,7 @@ function Account({ card }: { card: AccountCard }) {
     <article className="card account" aria-label="Bank account">
       <header>
         <h3>Bank of Cyprus sandbox account</h3>
-        <Label>live, BoC sandbox</Label>
+        <Label>{card.stale ? "last copy, BoC sandbox" : "live, BoC sandbox"}</Label>
       </header>
       <p className="amount">
         {card.available_cents === null ? "—" : euro(card.available_cents)}
@@ -257,6 +257,11 @@ function Account({ card }: { card: AccountCard }) {
         {card.iban ?? card.account_id} · a sample customer's account, not the bakery's · read{" "}
         {dayTime(card.read_at)}
       </p>
+      {card.stale ? (
+        <p className="muted small">
+          The sandbox allows only a few account reads a day, so this is the last copy it gave.
+        </p>
+      ) : null}
       {card.lines.length > 0 ? (
         <ol className="lines">
           {card.lines.map((line) => (

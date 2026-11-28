@@ -571,7 +571,13 @@ class EnaTools:
             available=None if account.available_cents is None else euros(account.available_cents),
             current=None if account.current_cents is None else euros(account.current_cents),
             note="A sample customer's sandbox account, not the synthetic business's: never add"
-            " its figures to the business's balance or forecast",
+            " its figures to the business's balance or forecast"
+            + (
+                ". The sandbox refused a fresh read: these figures are from"
+                f" {account.read_at:%d %b %H:%M} UTC, say so"
+                if account.stale
+                else ""
+            ),
         )
 
     def list_receipts(self, limit: int) -> ReceiptsResult:

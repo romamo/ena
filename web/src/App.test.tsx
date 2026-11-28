@@ -226,6 +226,19 @@ describe("App", () => {
     expect(within(account).getByText("+€120.25")).toBeTruthy();
   });
 
+  it("marks the account card when it shows the last copy", async () => {
+    if (ACCOUNT.card_kind !== "account") throw new Error("an account card expected");
+    const stale = { ...ACCOUNT, card: { ...ACCOUNT.card, stale: true } };
+    const fetcher = answering({
+      "/chat": () => streaming(sse(stale, { kind: "done", text: "x", unconfirmed: false, cached: false })),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.click(screen.getByRole("button", { name: "What's my balance?" }));
+    const account = await screen.findByRole("article", { name: "Bank account" });
+    expect(within(account).getByText("last copy, BoC sandbox")).toBeTruthy();
+    expect(within(account).getByText(/only a few account reads a day/)).toBeTruthy();
+  });
+
   it("says so when the API can't be reached", async () => {
     const fetcher = vi.fn(async () => {
       throw new TypeError("Failed to fetch");
