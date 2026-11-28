@@ -47,9 +47,6 @@ spec:
   environment:
     # the Claude CLI the agent SDK starts keeps its state under HOME
     HOME: /srv/apps/ena
-    # BoC sends the browser back here after a payment's confirmation; the same URI is set
-    # on the app in the sandbox portal. The BoC keys come from the deploy's env file
-    BOC_REDIRECT_URI: https://ena.cloudfall.dev/boc/consent
   healthCheck:
     type: http
     scheme: http
