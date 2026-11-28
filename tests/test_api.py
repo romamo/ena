@@ -524,7 +524,7 @@ def test_the_cache_refuses_money_replies_and_empty_questions() -> None:
 
 def test_the_agent_sees_only_enas_tools_and_no_secret() -> None:
     ena, _ = build(LEAN_WEEK, cache=None)
-    settings = AgentSettings(_env_file=None, model="claude-test-model")
+    settings = from_values(AgentSettings, {"model": "claude-test-model"})
     tools = ena.agent.tools
     options = ClaudeAgent(settings, build_server(tools), tools.today).options()
     assert options.model == "claude-test-model"
