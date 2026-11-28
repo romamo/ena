@@ -196,6 +196,9 @@ def test_the_account_reads_balances_and_the_newest_lines_first() -> None:
         ({"subscription_id": None}, "BOC_SUBSCRIPTION_ID"),
         ({"account_id": ""}, "BOC_ACCOUNT_ID"),
         ({"redirect_uri": "https://localhost/"}, "BOC_REDIRECT_URI"),
+        ({"redirect_uri": "http://localhost:5173/other/boc/consent"}, "BOC_REDIRECT_URI"),
+        ({"redirect_uri": "localhost:5173/boc/consent"}, "BOC_REDIRECT_URI"),
+        ({"redirect_uri": "/boc/consent"}, "BOC_REDIRECT_URI"),
     ],
 )
 def test_settings_that_cannot_complete_a_payment_are_refused(

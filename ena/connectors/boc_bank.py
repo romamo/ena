@@ -19,6 +19,7 @@ import datetime as dt
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Literal
+from urllib.parse import urlsplit
 
 from ena.connectors.boc import (
     Account,
@@ -128,7 +129,14 @@ class BocBank:
 def check_redirect(settings: BocSettings) -> None:
     """Refuse a redirect URI that does not come back to Ena's consent route: the
     confirmation would land on a page that never completes the payment."""
-    if not settings.redirect_uri.rstrip("/").endswith(CONSENT_PATH):
+    url = urlsplit(settings.redirect_uri)
+    if (
+        url.scheme not in ("http", "https")
+        or not url.netloc
+        or url.path.rstrip("/") != CONSENT_PATH
+        or url.query
+        or url.fragment
+    ):
         raise ValueError(
             f"BOC_REDIRECT_URI is {settings.redirect_uri!r}: point it at the chat page's"
             f" {CONSENT_PATH}, e.g. http://localhost:5173{CONSENT_PATH}, here and in the"
