@@ -1,4 +1,4 @@
-"""The chat test script (docs/build-plan.md §13): 11 owner questions on the seed month.
+"""The chat test script (docs/build-plan.md §13): 12 owner questions on the seed month.
 
 `chat_questions.json` holds each question in English and Greek, the day of November it
 is asked on, the invoices paid before it (through the gate, the owner approving any above
@@ -42,7 +42,15 @@ from ena.agent import (
 from ena.gate import Gate
 from ena.mcp_server import TOOLS, EnaTools, Ledger, ReplayDay, build_server, call_tool
 from ena.models import EventStatus
-from ena.seed import AMOUNTS, BOOKED_EVENT_ID, LEAN_WEEK, LOAN_DAY, RENT_DAY, synthetic_month
+from ena.seed import (
+    AMOUNTS,
+    BOOKED_EVENT_ID,
+    LEAN_WEEK,
+    LOAN_DAY,
+    RENT_DAY,
+    WEDDING_REQUEST_ID,
+    synthetic_month,
+)
 from ena.store import Store
 
 MONTH = synthetic_month()
@@ -201,6 +209,17 @@ def test_the_expected_figures_follow_the_seed() -> None:
     assert LEAN_WEEK_CLOSING < instalment + out // 4  # the lean week: spare cash is 0
     advance = wedding.costs_cents - wedding.deposit_cents
 
+    # The wedding supplies: Limassol is the cheapest quotation that delivers in time
+    # (Paphos is cheaper but late), and the saving is over the next one, Kyrenia
+    quotes = {q.id: q for q in MONTH.quotations if q.request_id == WEDDING_REQUEST_ID}
+    request = next(r for r in MONTH.quote_requests if r.id == WEDDING_REQUEST_ID)
+    on_time = sorted(
+        (q for q in quotes.values() if q.delivery_date <= request.needed_by),
+        key=lambda q: q.total_cents,
+    )
+    assert min(quotes.values(), key=lambda q: q.total_cents) not in on_time
+    best, runner_up = on_time[0], on_time[1]
+
     expected = {
         "balance": [paid_on_arrival[rent_day]],
         "rent-friday": [balance_through(LEAN_WEEK), LEAN_WEEK_CLOSING],
@@ -213,6 +232,7 @@ def test_the_expected_figures_follow_the_seed() -> None:
         "unmatched-payments": [rent, instalment],
         "receipts": [flour, dairy],
         "unknown-vat": [],
+        "compare-quotes": [best.total_cents, runner_up.total_cents - best.total_cents],
     }
     assert {q.id: [cents(f) for f in q.figures] for q in QUESTIONS} == expected
     assert BY_ID["balance"].day == RENT_DAY
@@ -220,8 +240,8 @@ def test_the_expected_figures_follow_the_seed() -> None:
     assert MONTH.loan.next_due_date.day == LOAN_DAY
 
 
-def test_the_script_has_eleven_questions_on_real_tools_and_invoices() -> None:
-    assert len(QUESTIONS) == 11
+def test_the_script_has_twelve_questions_on_real_tools_and_invoices() -> None:
+    assert len(QUESTIONS) == 12
     assert len(BY_ID) == len(QUESTIONS)
     names = {spec.name for spec in TOOLS}
     invoice_ids = {invoice.id for invoice in MONTH.invoices}

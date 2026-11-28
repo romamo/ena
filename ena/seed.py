@@ -35,6 +35,18 @@ the example's €1,000: it comes from the forecast, which leaves none in the lea
 the advance offered on the lean Monday is €2,800 for 16 days, not €1,800. The events'
 money is not on the statement: the month's cash story above stays as it is.
 
+The bakery buys through requests for quotation (`ena/procurement.py`):
+
+- Flour for November (`syn-rfq-0001`), sent Monday 26 October to three mills. Mesaoria
+  Mills quoted €1,240.00, Troodos Flour €1,288.00, and Larnaca Grain priced the bread
+  flour only. The owner ordered from Mesaoria Mills on 30 October (`syn-po-0001`), before
+  Ena was set up, and the €1,240 flour invoice of 4 November names that order: it matches
+- Butter, sugar and almond flour for the Georgiou wedding (`syn-rfq-0002`), sent Monday 9
+  November, needed by 14 December. Three quotations arrive from 11 to 13 November.
+  Paphos Wholesale is the cheapest at €593.50 but delivers on 16 December, too late; so on
+  the lean Monday the comparison recommends Limassol Cash & Carry at €605.00, €17.00 less
+  than Kyrenia Dairy. Nothing is ordered yet: the owner awards with a tap
+
 The amounts are placeholders until the interviews: they all sit in `AMOUNTS`.
 """
 
@@ -48,12 +60,18 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ena.models import (
     Account,
+    Actor,
     Business,
     CardSale,
     Event,
     EventStatus,
     InvoiceStatus,
+    ItemLine,
     Loan,
+    PurchaseOrder,
+    Quotation,
+    QuoteLine,
+    QuoteRequest,
     SupplierInvoice,
     Transaction,
 )
@@ -83,6 +101,12 @@ LOAN_DAY = 25
 
 BOOKED_EVENT_ID = "syn-event-0014"
 """The booked wedding the event advance is offered for."""
+
+FLOUR_ORDER_ID = "syn-po-0001"
+"""The order the flour invoice bills."""
+
+WEDDING_REQUEST_ID = "syn-rfq-0002"
+"""The open request for quotation the demo compares and awards."""
 
 
 class Placeholders(BaseModel):
@@ -154,6 +178,10 @@ class SeedMonth(BaseModel):
     events: tuple[Event, ...]
     first_day: dt.date
     last_day: dt.date
+    quote_requests: tuple[QuoteRequest, ...] = ()
+    quotations: tuple[Quotation, ...] = ()
+    purchase_orders: tuple[PurchaseOrder, ...] = ()
+    """Orders issued before Ena was set up; the owner's later ones are in the store."""
 
     @model_validator(mode="after")
     def _all_synthetic(self) -> Self:
@@ -168,6 +196,9 @@ class SeedMonth(BaseModel):
         ids += [invoice.jinius_id for invoice in self.invoices]
         ids += [sale.jcc_order_id for sale in self.card_sales]
         ids += [event.id for event in self.events]
+        ids += [request.id for request in self.quote_requests]
+        ids += [quote.id for quote in self.quotations]
+        ids += [order.id for order in self.purchase_orders]
         unmarked = [record_id for record_id in ids if not record_id.startswith(ID_PREFIX)]
         if unmarked:
             raise ValueError(f"ids without the {ID_PREFIX!r} prefix: {unmarked}")
@@ -177,6 +208,9 @@ class SeedMonth(BaseModel):
         names += [invoice.supplier_name for invoice in self.invoices]
         names += [record.counterparty for record in self.transactions]
         names += [event.customer for event in self.events]
+        names += [name for request in self.quote_requests for name in request.suppliers]
+        names += [quote.supplier_name for quote in self.quotations]
+        names += [order.supplier_name for order in self.purchase_orders]
         unnamed = [name for name in names if not name.endswith(SYNTHETIC)]
         if unnamed:
             raise ValueError(f"names without {SYNTHETIC!r}: {unnamed}")
@@ -254,9 +288,163 @@ def _invoices() -> list[SupplierInvoice]:
             due_date=due,
             status=InvoiceStatus.NEW,
             jinius_id=f"syn-jinius-{n:04d}",
+            purchase_order_id=FLOUR_ORDER_ID if name == _FLOUR[0] else None,
         )
         for n, ((name, iban), amount, issued, due) in enumerate(journey, start=1)
     ]
+
+
+# Procurement
+
+_TROODOS = "Troodos Flour (synthetic)"
+_LARNACA = "Larnaca Grain (synthetic)"
+_PAPHOS = "Paphos Wholesale (synthetic)"
+_LIMASSOL = "Limassol Cash & Carry (synthetic)"
+
+_FLOUR_ITEMS = (("Bread flour T55", 400, "kg"), ("Wholemeal flour", 80, "kg"))
+_WEDDING_ITEMS = (
+    ("Unsalted butter", 40, "kg"),
+    ("Caster sugar", 60, "kg"),
+    ("Almond flour", 15, "kg"),
+)
+
+
+def _items(items: tuple[tuple[str, int, str], ...]) -> tuple[ItemLine, ...]:
+    return tuple(ItemLine(description=d, quantity=q, unit=u) for d, q, u in items)
+
+
+def _lines(
+    items: tuple[tuple[str, int, str], ...], prices: tuple[int, ...]
+) -> tuple[QuoteLine, ...]:
+    """Quote lines for the first `len(prices)` items, each at its unit price in cents."""
+    return tuple(
+        QuoteLine(
+            description=description,
+            quantity=quantity,
+            unit=unit,
+            unit_price_cents=price,
+            total_cents=quantity * price,
+        )
+        for (description, quantity, unit), price in zip(items, prices, strict=False)
+    )
+
+
+def _quote(
+    n: int,
+    request_id: str,
+    supplier: str,
+    lines: tuple[QuoteLine, ...],
+    delivery: dt.date,
+    valid_until: dt.date,
+    received: dt.date,
+) -> Quotation:
+    return Quotation(
+        id=f"syn-quote-{n:04d}",
+        request_id=request_id,
+        supplier_name=supplier,
+        lines=lines,
+        total_cents=sum(line.total_cents for line in lines),
+        delivery_date=delivery,
+        valid_until=valid_until,
+        received_on=received,
+    )
+
+
+def _procurement() -> tuple[
+    tuple[QuoteRequest, ...], tuple[Quotation, ...], tuple[PurchaseOrder, ...]
+]:
+    flour = QuoteRequest(
+        id="syn-rfq-0001",
+        title="Flour for November",
+        items=_items(_FLOUR_ITEMS),
+        suppliers=(_FLOUR[0], _TROODOS, _LARNACA),
+        needed_by=dt.date(2026, 11, 6),
+        reply_by=dt.date(2026, 10, 29),
+        sent_on=dt.date(2026, 10, 26),
+        simulated=True,
+    )
+    wedding = QuoteRequest(
+        id=WEDDING_REQUEST_ID,
+        title="Butter, sugar and almond flour for the Georgiou wedding",
+        items=_items(_WEDDING_ITEMS),
+        suppliers=(_DAIRY[0], _PAPHOS, _LIMASSOL),
+        needed_by=dt.date(2026, 12, 14),
+        reply_by=dt.date(2026, 11, 13),
+        sent_on=dt.date(2026, 11, 9),
+        simulated=True,
+    )
+    mesaoria = _lines(_FLOUR_ITEMS, (250, 300))
+    quotes = (
+        _quote(
+            1,
+            flour.id,
+            _FLOUR[0],
+            mesaoria,
+            dt.date(2026, 11, 3),
+            dt.date(2026, 11, 13),
+            dt.date(2026, 10, 27),
+        ),
+        _quote(
+            2,
+            flour.id,
+            _TROODOS,
+            _lines(_FLOUR_ITEMS, (260, 310)),
+            dt.date(2026, 11, 4),
+            dt.date(2026, 11, 13),
+            dt.date(2026, 10, 28),
+        ),
+        _quote(
+            3,
+            flour.id,
+            _LARNACA,
+            _lines(_FLOUR_ITEMS, (240,)),
+            dt.date(2026, 11, 2),
+            dt.date(2026, 11, 13),
+            dt.date(2026, 10, 29),
+        ),
+        _quote(
+            4,
+            wedding.id,
+            _DAIRY[0],
+            _lines(_WEDDING_ITEMS, (820, 140, 1400)),
+            dt.date(2026, 12, 10),
+            dt.date(2026, 12, 1),
+            dt.date(2026, 11, 11),
+        ),
+        _quote(
+            5,
+            wedding.id,
+            _PAPHOS,
+            _lines(_WEDDING_ITEMS, (790, 125, 1350)),
+            dt.date(2026, 12, 16),
+            dt.date(2026, 12, 5),
+            dt.date(2026, 11, 12),
+        ),
+        _quote(
+            6,
+            wedding.id,
+            _LIMASSOL,
+            _lines(_WEDDING_ITEMS, (800, 130, 1380)),
+            dt.date(2026, 12, 11),
+            dt.date(2026, 11, 30),
+            dt.date(2026, 11, 13),
+        ),
+    )
+    order = PurchaseOrder(
+        id=FLOUR_ORDER_ID,
+        request_id=flour.id,
+        quotation_id=quotes[0].id,
+        supplier_name=_FLOUR[0],
+        lines=mesaoria,
+        total_cents=sum(line.total_cents for line in mesaoria),
+        deliver_by=dt.date(2026, 11, 3),
+        issued_at=dt.datetime(2026, 10, 30, 8, 0, tzinfo=dt.UTC),
+        actor=Actor.OWNER,
+        simulated=True,
+    )
+    if order.total_cents != AMOUNTS.flour_invoice_cents:
+        raise ValueError("the flour order must be for the flour invoice's amount")
+    return (flour, wedding), quotes, (order,)
 
 
 _PAST_EVENTS = (
@@ -326,6 +514,7 @@ def synthetic_month() -> SeedMonth:
     """Build the synthetic month: the same records on every call."""
     rng = random.Random(SEED)  # noqa: S311 - synthetic data, not cryptography
     sales = _card_sales(rng)
+    requests, quotations, orders = _procurement()
     return SeedMonth(
         business=Business(
             id=_BUSINESS_ID,
@@ -352,4 +541,7 @@ def synthetic_month() -> SeedMonth:
         events=tuple(_events()),
         first_day=FIRST_DAY,
         last_day=LAST_DAY,
+        quote_requests=requests,
+        quotations=quotations,
+        purchase_orders=orders,
     )

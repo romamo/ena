@@ -2,6 +2,7 @@ import QRCode from "qrcode";
 import { createContext, useContext, useEffect, useState } from "react";
 import {
   ApiError,
+  awardQuote,
   cancelConsent,
   consentState,
   decide,
@@ -12,7 +13,9 @@ import {
   type ConsentCard,
   type ForecastCard,
   type OfferCard,
+  type OrderCard,
   type PayLinkCard,
+  type QuotesCard,
   type ReceiptCard,
 } from "./api";
 import { day, dayTime, euro } from "./format";
@@ -31,6 +34,8 @@ const CARD_TAB: Record<CardEvent["card_kind"], BoardTab> = {
   offer: "credit",
   account: "overview",
   pay_link: "receipts",
+  quotes: "overview",
+  order: "receipts",
 };
 
 /** Opens the dashboard on a tab; given only in the chat, so a card there links to it. */
@@ -68,6 +73,10 @@ export function Card({ event }: { event: CardEvent }) {
       return <Offer card={event.card} />;
     case "pay_link":
       return <PayLink card={event.card} />;
+    case "quotes":
+      return <Quotes card={event.card} />;
+    case "order":
+      return <Order card={event.card} />;
   }
 }
 
@@ -369,6 +378,118 @@ function PayLink({ card }: { card: PayLinkCard }) {
         Open until {dayTime(card.expires_at)} · {card.id}
       </p>
       <BoardLink kind="pay_link" />
+    </article>
+  );
+}
+
+type Award =
+  | { state: "open" }
+  | { state: "sending"; quotationId: string }
+  | { state: "ordered"; order: CardEvent }
+  | { state: "failed"; message: string };
+
+function Quotes({ card }: { card: QuotesCard }) {
+  const fetcher = useContext(FetchContext);
+  const decided = useContext(OnDecided);
+  const [award, setAward] = useState<Award>({ state: "open" });
+  const open = card.order_id === null && award.state !== "ordered";
+
+  async function choose(quotationId: string) {
+    setAward({ state: "sending", quotationId });
+    try {
+      setAward({ state: "ordered", order: await awardQuote(quotationId, fetcher) });
+      decided();
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : String(error);
+      setAward({ state: "failed", message });
+    }
+  }
+
+  return (
+    <article className="card quotes" aria-label="Quotations">
+      <header>
+        <h3>{open ? "Quotations to compare" : "Ordered"}</h3>
+        <Label>synthetic</Label>
+      </header>
+      <p>{card.request.title}</p>
+      <p className="muted small">
+        Needed by {day(card.request.needed_by)} · asked {card.request.suppliers.length} suppliers
+        outside Jinius (simulated)
+      </p>
+      {card.quotes.length === 0 ? (
+        <p className="muted">No quotations yet.</p>
+      ) : (
+        <ol className="quotes-list">
+          {card.quotes.map(({ quotation, valid, issues }) => {
+            const recommended = quotation.id === card.recommended;
+            const awarded = quotation.id === card.awarded;
+            return (
+              <li key={quotation.id} className={recommended ? "recommended" : undefined}>
+                <div className="quote-head">
+                  <span>{quotation.supplier_name}</span>
+                  <span className="amount-inline">{euro(quotation.total_cents)}</span>
+                </div>
+                <p className="muted small">
+                  Delivers {day(quotation.delivery_date)} · holds until {day(quotation.valid_until)}
+                  {recommended ? " · Ena recommends" : ""}
+                  {awarded ? " · ordered" : ""}
+                </p>
+                {issues.length > 0 ? <p className="muted small">{issues.join("; ")}</p> : null}
+                {open && valid ? (
+                  <button
+                    type="button"
+                    className={recommended ? "primary" : undefined}
+                    disabled={award.state === "sending"}
+                    onClick={() => void choose(quotation.id)}
+                  >
+                    {award.state === "sending" && award.quotationId === quotation.id
+                      ? "Ordering…"
+                      : `Order from ${quotation.supplier_name}`}
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      <p className="muted">{card.reason}</p>
+      {award.state === "failed" ? (
+        <p className="error" role="alert">
+          {award.message}
+        </p>
+      ) : null}
+      {award.state === "ordered" ? <Card event={award.order} /> : null}
+    </article>
+  );
+}
+
+function Order({ card }: { card: OrderCard }) {
+  return (
+    <article className="card order" aria-label="Purchase order">
+      <header>
+        <h3>Purchase order {card.id}</h3>
+        <Label>{card.simulated ? "sent outside Jinius, simulated" : "synthetic"}</Label>
+      </header>
+      <p className="amount">{euro(card.total_cents)}</p>
+      <p>
+        To {card.supplier_name}, delivered by {day(card.deliver_by)}
+      </p>
+      <ol className="lines">
+        {card.lines.map((line) => (
+          <li key={line.description}>
+            <span>
+              {line.quantity} {line.unit}
+            </span>
+            <span>{line.description}</span>
+            <span>{euro(line.total_cents)}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="muted small">
+        By {card.actor === "ena" ? "Ena" : "you"}, {dayTime(card.issued_at)}. Ena pays the
+        supplier's Jinius invoice only if it names this order and matches it.
+      </p>
+      <BoardLink kind="order" />
     </article>
   );
 }

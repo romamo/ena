@@ -45,6 +45,12 @@ shows its hosted payment page as a card with a QR code. It moves no money and go
 through no gate, but writes a receipt that Ena created the link; the sale itself is
 booked only by JCC's callback. Each call is a new JCC order, so its reply is never
 cached. Without JCC's settings and `JCC_RETURN_URL` the tool refuses.
+
+Procurement (`ena/procurement.py`): `list_quote_requests`, `compare_quotes` (the comparison
+card), `request_quotes` (a drafted request and Ena's receipt) and `list_purchase_orders`.
+No tool awards a quotation or issues an order: that is the owner's tap. `pay_invoice`
+checks an invoice that names a purchase order against it first and holds a mismatch
+("held") without calling the gate.
 """
 
 from __future__ import annotations
@@ -75,13 +81,19 @@ from ena.models import (
     Forecast,
     InvoiceStatus,
     IsoDate,
+    ItemLine,
     Loan,
     Offer,
     PayLink,
+    PurchaseOrder,
+    Quotation,
+    QuoteComparison,
+    QuoteRequest,
     Receipt,
     SupplierInvoice,
     Transaction,
 )
+from ena.procurement import Procurement, ProcurementError
 from ena.replay import TZ, DayStarted, ReplayEvent
 from ena.rules.books import Books, match_books, match_invoices
 from ena.rules.events import (
@@ -199,12 +211,37 @@ class Ledger:
                 return event
         raise ToolError(f"no event {event_id!r}")
 
+    def quote_requests(self) -> list[QuoteRequest]:
+        """The requests for quotation sent by today: the month's and those Ena drafted."""
+        sent = [r for r in self._month.quote_requests if r.sent_on <= self.today()]
+        return sent + self._store.quote_requests()
+
+    def quotations(self, request_id: str) -> list[Quotation]:
+        """The replies to a request that have arrived by today."""
+        return [
+            quote
+            for quote in self._month.quotations
+            if quote.request_id == request_id and quote.received_on <= self.today()
+        ]
+
+    def purchase_orders(self) -> list[PurchaseOrder]:
+        """The orders issued by today: the month's and those the owner issued through Ena."""
+        issued = [
+            order
+            for order in self._month.purchase_orders
+            if order.issued_at.astimezone(TZ).date() <= self.today()
+        ]
+        return issued + self._store.purchase_orders()
+
     def state(self) -> str:
         """A digest of what the store has changed in the month: the receipts, the invoices'
-        statuses (pending approvals among them) and the card sales booked from JCC."""
+        statuses (pending approvals among them), the card sales booked from JCC and the
+        requests for quotation and orders kept."""
         parts = [f"receipt {r.id} {r.result}" for r in self._store.receipts()]
         parts += [f"invoice {i.id} {i.status}" for i in self.invoices()]
         parts += [f"sale {s.jcc_order_id}" for s in self._store.card_sales()]
+        parts += [f"request {r.id}" for r in self._store.quote_requests()]
+        parts += [f"order {o.id}" for o in self._store.purchase_orders()]
         return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
 
     def live_sale_ids(self) -> frozenset[str]:
@@ -366,6 +403,8 @@ class InvoiceView(_Result):
     issue_date: dt.date
     due_date: dt.date
     status: InvoiceStatus
+    purchase_order_id: str | None = None
+    """The purchase order the invoice bills, when it names one."""
 
 
 class InvoicesResult(_Result):
@@ -402,7 +441,9 @@ class ReceiptsResult(_Result):
     """Newest first."""
 
 
-PayStatus = Literal["paid", "failed", "declined", "unknown", "awaiting_approval", "awaiting_bank"]
+PayStatus = Literal[
+    "paid", "failed", "declined", "unknown", "awaiting_approval", "awaiting_bank", "held"
+]
 
 
 class PayResult(_Result):
@@ -413,6 +454,75 @@ class PayResult(_Result):
     approval: ApprovalRequest | None
     consent: BankConsent | None = None
     note: str
+    order_check: str | None = None
+    """How the invoice matched the purchase order it names; None when it names none."""
+
+
+class ItemView(_Result):
+    description: str
+    quantity: int
+    unit: str
+
+
+class QuoteRequestView(_Result):
+    id: str
+    title: str
+    items: tuple[ItemView, ...]
+    suppliers: tuple[str, ...]
+    needed_by: dt.date
+    reply_by: dt.date
+    sent_on: dt.date
+    quotations_received: int
+    order_id: str | None
+    """The purchase order issued for it, or None while it is open."""
+
+
+class QuoteRequestsResult(_Result):
+    as_of: dt.date
+    requests: tuple[QuoteRequestView, ...]
+    note: str
+
+
+class QuoteView(_Result):
+    rank: int
+    quotation_id: str
+    supplier_name: str
+    total: str
+    delivery_date: dt.date
+    valid_until: dt.date
+    eligible: bool
+    issues: tuple[str, ...]
+
+
+class ComparisonResult(_Result):
+    request_id: str
+    title: str
+    quotes: tuple[QuoteView, ...]
+    recommended: str | None
+    awarded: str | None
+    order_id: str | None
+    reason: str
+    note: str
+
+
+class RequestQuotesResult(_Result):
+    request: QuoteRequestView
+    receipt: Receipt
+    note: str
+
+
+class OrderView(_Result):
+    id: str
+    request_id: str
+    supplier_name: str
+    total: str
+    deliver_by: dt.date
+    issued_on: dt.date
+    by: Literal["ena", "owner"]
+
+
+class OrdersResult(_Result):
+    orders: tuple[OrderView, ...]
 
 
 class BankAccountResult(_Result):
@@ -490,6 +600,7 @@ class EnaTools:
         self._clock = clock
         self._bank = bank
         self._pay_links = pay_links if pay_links is not None and pay_links.issues_links else None
+        self._procurement = Procurement(ledger, store, clock)
         self._turn = Turn()
 
     def start_turn(self) -> None:
@@ -640,13 +751,42 @@ class EnaTools:
     # Money and offers
 
     def pay_invoice(self, invoice_id: str) -> PayResult:
-        """Ask the gate to pay an invoice: paid within the limit, an approval above it."""
+        """Ask the gate to pay an invoice: paid within the limit, an approval above it.
+
+        An invoice that names a purchase order is checked against it first; a mismatch is
+        held and never reaches the gate (ena/procurement.py)."""
         invoice = self._ledger.invoice(invoice_id)
+        amount = euros(invoice.amount_cents)
+        check = self._procurement.check_invoice(invoice)
+        order_check = None
+        if check is not None:
+            if not check.matched:
+                return PayResult(
+                    invoice_id=invoice.id,
+                    status="held",
+                    amount=amount,
+                    receipt=None,
+                    approval=None,
+                    note=(
+                        f"Not paid, held: it does not match the purchase order {check.order_id}"
+                        f" ({'; '.join(check.issues)}). Ask the supplier for a corrected invoice"
+                    ),
+                    order_check=f"mismatch with {check.order_id}",
+                )
+            order_check = f"matches the purchase order {check.order_id}"
         outcome = self._gate.request_payment(
             f"Pay {invoice.supplier_name} invoice {invoice.id}", invoice.amount_cents, invoice.id
         )
         self._turn.cards.append(outcome)
-        amount = euros(invoice.amount_cents)
+        result = self._pay_result(invoice, amount, outcome)
+        return result.model_copy(update={"order_check": order_check})
+
+    def _pay_result(
+        self,
+        invoice: SupplierInvoice,
+        amount: str,
+        outcome: Receipt | ApprovalRequest | BankConsent,
+    ) -> PayResult:
         if isinstance(outcome, ApprovalRequest):
             if outcome.status is not ApprovalStatus.PENDING:
                 raise RuntimeError(f"the gate returned a decided approval {outcome.id}")
@@ -684,6 +824,88 @@ class EnaTools:
             receipt=outcome,
             approval=None,
             note=outcome.explanation,
+        )
+
+    # Procurement
+
+    def list_quote_requests(self) -> QuoteRequestsResult:
+        return QuoteRequestsResult(
+            as_of=self._ledger.today(),
+            requests=tuple(self._request_view(r) for r in self._ledger.quote_requests()),
+            note="Requests are sent outside Jinius, which has no API for them (simulated)",
+        )
+
+    def compare_quotes(self, request_id: str) -> ComparisonResult:
+        """The request's quotations ranked, shown as the comparison card the owner awards on."""
+        try:
+            comparison = self._procurement.compare(request_id)
+        except ProcurementError as error:
+            raise ToolError(str(error)) from error
+        self._turn.cards.append(comparison)
+        return _comparison(comparison)
+
+    def request_quotes(
+        self,
+        title: str,
+        items: list[dict[str, Any]],
+        suppliers: list[str],
+        needed_by: str,
+    ) -> RequestQuotesResult:
+        """Draft a request for quotation, with Ena's receipt; it moves no money."""
+        try:
+            lines = [ItemLine.model_validate(item) for item in items]
+        except ValidationError as error:
+            raise ToolError(
+                f"each item needs a description, a quantity and a unit: {error}"
+            ) from error
+        try:
+            request, receipt = self._procurement.request_quotes(
+                title, lines, suppliers, _date(needed_by, "needed_by")
+            )
+        except ProcurementError as error:
+            raise ToolError(str(error)) from error
+        self._turn.cards.append(receipt)
+        return RequestQuotesResult(
+            request=self._request_view(request),
+            receipt=receipt,
+            note=(
+                "Drafted, not sent through Jinius: Jinius has no API for requests for"
+                " quotation, so the owner sends it from Jinius Tenders or by email (simulated)."
+                " Replies are compared with compare_quotes once they arrive"
+            ),
+        )
+
+    def list_purchase_orders(self) -> OrdersResult:
+        return OrdersResult(
+            orders=tuple(
+                OrderView(
+                    id=order.id,
+                    request_id=order.request_id,
+                    supplier_name=order.supplier_name,
+                    total=euros(order.total_cents),
+                    deliver_by=order.deliver_by,
+                    issued_on=order.issued_at.astimezone(TZ).date(),
+                    by="owner" if order.actor is Actor.OWNER else "ena",
+                )
+                for order in self._ledger.purchase_orders()
+            )
+        )
+
+    def _request_view(self, request: QuoteRequest) -> QuoteRequestView:
+        order = self._procurement.order_for(request.id)
+        return QuoteRequestView(
+            id=request.id,
+            title=request.title,
+            items=tuple(
+                ItemView(description=i.description, quantity=i.quantity, unit=i.unit)
+                for i in request.items
+            ),
+            suppliers=request.suppliers,
+            needed_by=request.needed_by,
+            reply_by=request.reply_by,
+            sent_on=request.sent_on,
+            quotations_received=len(self._ledger.quotations(request.id)),
+            order_id=None if order is None else order.id,
         )
 
     def propose_reserve(self) -> OfferResult:
@@ -887,6 +1109,40 @@ def _event(event: Event) -> EventView:
     )
 
 
+def _comparison(comparison: QuoteComparison) -> ComparisonResult:
+    if comparison.order_id is not None:
+        note = "Already ordered: the order is in the card; nothing more to award"
+    elif comparison.recommended is not None:
+        note = (
+            "Only the owner awards, with the tap on the comparison card; you cannot award or"
+            " order. The owner may award another quotation that still holds"
+        )
+    else:
+        note = "Nothing to recommend yet; only the owner awards, with the tap on the card"
+    return ComparisonResult(
+        request_id=comparison.request.id,
+        title=comparison.request.title,
+        quotes=tuple(
+            QuoteView(
+                rank=r.rank,
+                quotation_id=r.quotation.id,
+                supplier_name=r.quotation.supplier_name,
+                total=euros(r.quotation.total_cents),
+                delivery_date=r.quotation.delivery_date,
+                valid_until=r.quotation.valid_until,
+                eligible=r.complete and r.on_time and r.valid,
+                issues=r.issues,
+            )
+            for r in comparison.quotes
+        ),
+        recommended=comparison.recommended,
+        awarded=comparison.awarded,
+        order_id=comparison.order_id,
+        reason=comparison.reason,
+        note=note,
+    )
+
+
 def _date(value: str, name: str) -> dt.date:
     try:
         return TypeAdapter(IsoDate).validate_python(value)
@@ -914,6 +1170,7 @@ def _invoice(invoice: SupplierInvoice) -> InvoiceView:
         issue_date=invoice.issue_date,
         due_date=invoice.due_date,
         status=invoice.status,
+        purchase_order_id=invoice.purchase_order_id,
     )
 
 
@@ -1015,6 +1272,72 @@ TOOLS: tuple[ToolSpec, ...] = (
         },
         _MONEY,
         lambda t, a: t.pay_invoice(a["invoice_id"]),
+    ),
+    ToolSpec(
+        "list_quote_requests",
+        "The requests for quotation sent so far, with how many quotations arrived and the"
+        " purchase order issued for each, if any.",
+        _NO_ARGS,
+        _READ,
+        lambda t, _: t.list_quote_requests(),
+    ),
+    ToolSpec(
+        "compare_quotes",
+        "Rank a request's quotations (complete, on time and still valid first, then the"
+        " cheapest) and recommend one. Shows the comparison card, where only the owner"
+        " awards.",
+        {
+            "type": "object",
+            "properties": {"request_id": {"type": "string", "minLength": 1}},
+            "required": ["request_id"],
+            "additionalProperties": False,
+        },
+        _READ,
+        lambda t, a: t.compare_quotes(a["request_id"]),
+    ),
+    ToolSpec(
+        "request_quotes",
+        "Draft a request for quotation to suppliers, when the owner asks for one. It is"
+        " sent outside Jinius (simulated) and moves no money.",
+        {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": {"type": "string", "minLength": 1},
+                            "quantity": {"type": "integer", "minimum": 1},
+                            "unit": {"type": "string", "minLength": 1},
+                        },
+                        "required": ["description", "quantity", "unit"],
+                        "additionalProperties": False,
+                    },
+                },
+                "suppliers": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "needed_by": {"type": "string", "description": "YYYY-MM-DD"},
+            },
+            "required": ["title", "items", "suppliers", "needed_by"],
+            "additionalProperties": False,
+        },
+        _MONEY,
+        lambda t, a: t.request_quotes(a["title"], a["items"], a["suppliers"], a["needed_by"]),
+    ),
+    ToolSpec(
+        "list_purchase_orders",
+        "The purchase orders issued, newest last.",
+        _NO_ARGS,
+        _READ,
+        lambda t, _: t.list_purchase_orders(),
     ),
     ToolSpec(
         "propose_reserve",

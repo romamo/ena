@@ -17,6 +17,9 @@ written, closed in the same transaction, and at most one is open at a time, sinc
 bank's redirect after a confirmation names no payment (docs/boc-notes.md §4).
 The last read of the bank account is kept, one copy that each read replaces, so a
 restart doesn't spend one of the few reads the bank allows a day.
+A request for quotation Ena drafts is kept with its receipt, in one transaction, once per
+id. A purchase order is kept with the owner's receipt, in one transaction: at most one per
+request and one per quotation, so a request is never ordered twice.
 """
 
 from __future__ import annotations
@@ -34,6 +37,8 @@ from ena.models import (
     BankConsent,
     CardSale,
     Offer,
+    PurchaseOrder,
+    QuoteRequest,
     Receipt,
 )
 
@@ -82,6 +87,18 @@ CREATE TABLE IF NOT EXISTS card_sales (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
     jcc_order_id TEXT NOT NULL UNIQUE,
+    body TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS quote_requests (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    body TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    request_id TEXT NOT NULL UNIQUE,
+    quotation_id TEXT NOT NULL UNIQUE,
     body TEXT NOT NULL
 );
 """
@@ -262,6 +279,48 @@ class Store:
                 "INSERT INTO receipts (id, ref, body) VALUES (?, ?, ?)",
                 (receipt.id, receipt.ref, receipt.model_dump_json()),
             )
+
+    # Procurement: requests for quotation and purchase orders, insert and read only
+
+    def add_quote_request(self, request: QuoteRequest, receipt: Receipt) -> None:
+        """Keep a drafted request and write its receipt, in one transaction."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO quote_requests (id, body) VALUES (?, ?)",
+                (request.id, request.model_dump_json()),
+            )
+            self._insert_receipt(receipt)
+
+    def quote_requests(self) -> list[QuoteRequest]:
+        """Every request Ena drafted, oldest first."""
+        rows = self._db.execute("SELECT body FROM quote_requests ORDER BY seq").fetchall()
+        return [QuoteRequest.model_validate_json(body) for (body,) in rows]
+
+    def add_purchase_order(self, order: PurchaseOrder, receipt: Receipt) -> None:
+        """Keep an issued order and write the owner's receipt, in one transaction; fails
+        when its request or its quotation already has an order."""
+        with self._db:
+            try:
+                self._db.execute(
+                    "INSERT INTO purchase_orders (id, request_id, quotation_id, body)"
+                    " VALUES (?, ?, ?, ?)",
+                    (order.id, order.request_id, order.quotation_id, order.model_dump_json()),
+                )
+            except sqlite3.IntegrityError as error:
+                raise StoreError(f"request {order.request_id} already has an order") from error
+            self._insert_receipt(receipt)
+
+    def purchase_orders(self) -> list[PurchaseOrder]:
+        """Every order the owner issued through Ena, oldest first."""
+        rows = self._db.execute("SELECT body FROM purchase_orders ORDER BY seq").fetchall()
+        return [PurchaseOrder.model_validate_json(body) for (body,) in rows]
+
+    def _insert_receipt(self, receipt: Receipt) -> None:
+        """Inside the caller's transaction: write a receipt."""
+        self._db.execute(
+            "INSERT INTO receipts (id, ref, body) VALUES (?, ?, ?)",
+            (receipt.id, receipt.ref, receipt.model_dump_json()),
+        )
 
     # The bank account's last read
 

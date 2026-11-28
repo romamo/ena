@@ -64,6 +64,8 @@ from ena.models import (
     Forecast,
     Offer,
     PayLink,
+    PurchaseOrder,
+    QuoteComparison,
     Receipt,
 )
 
@@ -108,6 +110,13 @@ to pay an invoice that waits for approval, call pay_invoice again: the gate retu
 same approval and its card. When pay_invoice returns \
 "awaiting_bank", say it is not paid yet: the owner confirms it in the Bank of Cyprus \
 screen the card opens.
+- Procurement: list_quote_requests shows the requests for quotation; compare_quotes \
+ranks a request's quotations and shows the card. Only the owner awards a quotation, with \
+the tap on that card: never say you ordered, awarded or chose a supplier, say which one \
+you recommend and why, as the result words it. request_quotes only drafts a request when \
+the owner asks for one; it is sent outside Jinius (simulated), so never say Jinius sent \
+it. When pay_invoice returns "held", the invoice does not match its purchase order: say \
+it is not paid and why, as the note says.
 - get_bank_account reads the live Bank of Cyprus sandbox account, a sample customer's, \
 not the synthetic business's. Say its figures are from the BoC sandbox and never add \
 them to the business's balance, books or forecast.
@@ -271,7 +280,9 @@ class _Event(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-CardKind = Literal["approval", "consent", "receipt", "forecast", "offer", "account", "pay_link"]
+CardKind = Literal[
+    "approval", "consent", "receipt", "forecast", "offer", "account", "pay_link", "quotes", "order"
+]
 
 
 class TextEvent(_Event):
@@ -319,6 +330,10 @@ def card_event(card: Card) -> CardEvent:
             kind = "account"
         case PayLink():
             kind = "pay_link"
+        case QuoteComparison():
+            kind = "quotes"
+        case PurchaseOrder():
+            kind = "order"
     return CardEvent(card_kind=kind, card=card)
 
 
