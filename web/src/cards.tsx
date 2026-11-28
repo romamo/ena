@@ -101,7 +101,7 @@ function Receipt({ card }: { card: ReceiptCard }) {
     <article className={`card receipt result-${card.result}`} aria-label="Receipt">
       <header>
         <h3>Receipt · {card.result}</h3>
-        <Label>simulated payment</Label>
+        <Label>{card.simulated ? "simulated payment" : "synthetic"}</Label>
       </header>
       <p className="amount">{euro(card.amount_cents)}</p>
       <p>{card.action}</p>

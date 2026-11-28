@@ -26,7 +26,8 @@ export const RECEIPT: CardEvent = {
     amount_cents: 124000,
     ref: "syn-inv-0002",
     result: "paid",
-    explanation: "Approved by the owner; paid €1,240.00, bank status CPLT",
+    explanation: "Approved by the owner; paid €1,240.00, bank status CPLT (simulated: no money moved)",
+    simulated: true,
   },
 };
 
@@ -53,6 +54,22 @@ export const LOAN: CardEvent = {
     term_days: 730,
     basis: { gap_cents: 60031, rounded_gap_cents: 100000 },
     simulated: true,
+  },
+};
+
+export const DECLINED: CardEvent = {
+  kind: "card",
+  card_kind: "receipt",
+  card: {
+    id: "receipt-syn-inv-0002",
+    at: "2026-11-16T09:05:00Z",
+    actor: "owner",
+    action: "Pay Mesaoria Mills (synthetic) invoice syn-inv-0002",
+    amount_cents: 124000,
+    ref: "syn-inv-0002",
+    result: "declined",
+    explanation: "Declined by the owner; nothing paid",
+    simulated: false,
   },
 };
 
