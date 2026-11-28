@@ -262,6 +262,32 @@ def test_a_payment_above_the_limit_is_an_approval_card_until_the_owner_taps(api:
     assert api.bank.calls == [FLOUR.id]
 
 
+def test_asked_again_to_pay_a_pending_invoice_the_same_approval_card_is_shown(api: Api) -> None:
+    first = api.chat("Pay the flour invoice", Call("pay_invoice", {"invoice_id": FLOUR.id}))
+    approval = first[0][1]["card"]
+
+    again = api.chat(
+        "Pay the flour invoice",
+        Call("pay_invoice", {"invoice_id": FLOUR.id}),
+        Say("It still waits for your approval."),
+    )
+    assert kinds(again) == ["card", "text", "done"]
+    assert again[0][1]["card"] == approval
+
+    recalled = api.chat(
+        "Pay the flour invoice",
+        Say("The flour invoice is already waiting for your approval in the card."),
+    )
+    assert kinds(recalled) == ["card", "text", "done"]
+    assert (recalled[0][1]["card_kind"], recalled[0][1]["card"]) == ("approval", approval)
+    assert api.bank.calls == []
+
+    assert api.http.post(f"/approvals/{approval['id']}/approve").status_code == 200
+    assert api.bank.calls == [FLOUR.id]
+    after = api.chat("Pay the flour invoice", Say("It needs no approval: it is paid."))
+    assert kinds(after) == ["text", "done"]
+
+
 def test_the_owner_declines_and_nothing_is_paid(api: Api) -> None:
     events = api.chat("Pay the flour invoice", Call("pay_invoice", {"invoice_id": FLOUR.id}))
     approval_id = events[0][1]["card"]["id"]
