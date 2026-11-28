@@ -244,13 +244,16 @@ def test_ena_serve_refuses_the_same_settings_at_start(tmp_path: Path) -> None:
 
 @dataclass
 class Payer:
-    """Calls the tool the prompt names (`pay <invoice id>` or `account`)."""
+    """Calls the tool the prompt names (`pay <invoice id>`, `account` or `balance`)."""
 
     tools: EnaTools
+    balance: dict[str, Any] = field(default_factory=dict)
 
     async def run(self, prompt: str) -> AsyncIterator[str]:
         if prompt == "account":
             call_tool(self.tools, "get_bank_account", {})
+        elif prompt == "balance":
+            self.balance = json.loads(call_tool(self.tools, "get_balance", {}))
         else:
             call_tool(self.tools, "pay_invoice", {"invoice_id": prompt.removeprefix("pay ")})
         yield "Done."
@@ -559,3 +562,39 @@ def test_another_accounts_copy_is_never_served(store: Store) -> None:
 
     assert reads(sandbox, store, clock).account().account_id == ACCOUNT
     assert statements(sandbox) == 2
+
+
+def test_with_the_bank_live_the_balance_comes_from_the_sandbox(http: TestClient) -> None:
+    card = _card(sse(http.post("/chat", json={"text": "balance"}).text))
+
+    assert card["card_kind"] == "account"
+    assert card["card"]["available_cents"] == 825_050
+
+
+def test_the_balance_result_names_the_bank_figure_and_keeps_the_ledger_apart(
+    sandbox: Sandbox,
+) -> None:
+    payers: list[Payer] = []
+
+    def runner(tools: EnaTools) -> AgentRunner:
+        payers.append(Payer(tools))
+        return payers[-1]
+
+    settings = ServeSettings(
+        store=None,
+        day=LEAN_WEEK,
+        cache=None,
+        agent=AgentSettings(_env_file=None),
+        jcc=None,
+        model_credential=False,
+        boc=boc_settings(),
+    )
+    server = build(settings, runner=runner, boc_transport=httpx.MockTransport(sandbox))
+    with TestClient(server.app) as client:
+        client.post("/chat", json={"text": "balance"})
+    server.close()
+
+    result = payers[0].balance
+    assert result["bank"]["available"] == "€8,250.50"
+    assert result["balance"] != result["bank"]["available"]
+    assert "give that one" in result["note"]

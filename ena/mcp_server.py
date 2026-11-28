@@ -318,7 +318,11 @@ class BalanceResult(_Result):
     as_of: dt.date
     balance_cents: int
     balance: str
+    """The synthetic bakery's ledger balance, the one the forecast and the books use."""
     currency: str
+    bank: BankAccountResult | None = None
+    """With the bank live: the account at Bank of Cyprus, read from the sandbox."""
+    note: str = ""
 
 
 class TransactionView(_Result):
@@ -493,12 +497,31 @@ class EnaTools:
     # Reads
 
     def get_balance(self) -> BalanceResult:
+        """The ledger's balance, and with the bank live, the Bank of Cyprus account's,
+        which is the one to give for "my balance"."""
         cents = self._ledger.balance_cents()
+        bank, note = None, ""
+        if self._bank is not None:
+            try:
+                bank = self._bank_result(self._bank.account())
+                note = (
+                    "The owner's balance is bank.available, the Bank of Cyprus sandbox account's"
+                    " (test money): give that one and say it is from the BoC sandbox. balance is"
+                    " the synthetic bakery's ledger, which the forecast and the books use; never"
+                    " add or mix the two"
+                )
+            except BankUnavailable as error:
+                note = (
+                    f"The Bank of Cyprus sandbox could not be read ({error}): say so; balance is"
+                    " the synthetic bakery's ledger"
+                )
         return BalanceResult(
             as_of=self._ledger.today(),
             balance_cents=cents,
             balance=euros(cents),
             currency=self._ledger.month.account.currency,
+            bank=bank,
+            note=note,
         )
 
     def list_transactions(self, from_date: str, to_date: str) -> TransactionsResult:
@@ -573,8 +596,8 @@ class EnaTools:
         """The account as a result, and its card for the owner."""
         self._turn.cards.append(account)
         notes = [
-            "A sample customer's sandbox account, not the synthetic business's: never add"
-            " its figures to the business's balance or forecast"
+            "The Bank of Cyprus sandbox account (test money): the forecast and the books run on"
+            " the synthetic bakery's ledger, so never add or mix the two"
         ]
         if account.stale:
             notes.append(
@@ -852,7 +875,8 @@ class ToolSpec:
 TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "get_balance",
-        "The account balance today.",
+        "The account balance today: with the bank live, the Bank of Cyprus account's, beside"
+        " the synthetic ledger's that the forecast uses.",
         _NO_ARGS,
         _READ,
         lambda t, _: t.get_balance(),

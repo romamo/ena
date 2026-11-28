@@ -254,7 +254,7 @@ function Account({ card }: { card: AccountCard }) {
         <span className="muted small"> available</span>
       </p>
       <p className="muted small">
-        {card.iban ?? card.account_id} · a sample customer's account, not the bakery's · read{" "}
+        {card.iban ?? card.account_id} · test money, apart from the bakery's ledger · read{" "}
         {dayTime(card.read_at)}
       </p>
       {card.stale ? (

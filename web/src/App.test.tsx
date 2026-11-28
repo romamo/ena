@@ -222,7 +222,7 @@ describe("App", () => {
     const account = await screen.findByRole("article", { name: "Bank account" });
     expect(within(account).getByText("live, BoC sandbox")).toBeTruthy();
     expect(within(account).getByText("€8,250.50")).toBeTruthy();
-    expect(within(account).getByText(/not the bakery's/)).toBeTruthy();
+    expect(within(account).getByText(/apart from the bakery's ledger/)).toBeTruthy();
     expect(within(account).getByText("+€120.25")).toBeTruthy();
   });
 
