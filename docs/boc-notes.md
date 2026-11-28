@@ -17,16 +17,16 @@ Read later the same day: the Postman suite `Sandbox samples.zip` (https://develo
 ## 1. Access
 
 1. Create a free developer account on https://sandbox.bankofcyprus.com (Sign-On). Credentials arrive by email
-2. In "My Apps", register an application. The OAuth redirect URI is mandatory. The docs' samples redirect to `https://localhost/?code=...`, so a localhost redirect probably works (UNKNOWN until tried)
+2. In "My Apps", register an application. The OAuth redirect URI is mandatory. The docs' samples redirect to `https://localhost/?code=...`; our app "Ena" is registered with `https://localhost/`, which works (VERIFIED 2026-11-28, section 4)
 3. The client secret is shown once only; it can be reset from the app page, not recovered
-4. In the app's subscription area, subscribe it to a plan. For our loop: **PSD2-AISP-PISP-Product** (accounts + payments + subscriptions). Plans carry rate limits; the app page shows usage. Actual numbers are not published (UNKNOWN)
+4. In the app's subscription area, subscribe it to a plan. For our loop: **PSD2-AISP-PISP-Product** (accounts + payments + subscriptions) and also **B2B-APIs-Product** (BOC B2B Plan), which BoC's sandbox guide requires; without it the consent never returns a `code` (section 4). Plans carry rate limits; the app page shows usage. Actual numbers are not published (UNKNOWN)
 
 `.env.example` names (values never in the repo):
 
 ```text
 BOC_CLIENT_ID=
 BOC_CLIENT_SECRET=
-BOC_REDIRECT_URI=https://localhost/callback
+BOC_REDIRECT_URI=https://localhost/
 BOC_API_BASE=https://sandbox-apis.bankofcyprus.com/df-boc-org-sb/sb/psd2
 BOC_SIGN_URL=https://sandbox-apis.bankofcyprus.com/df-boc-org-sb/sb/jwssignverifyapi/sign
 BOC_SUBSCRIPTION_ID=          # filled after consent, valid 180 days
@@ -103,7 +103,14 @@ Not found. The sandbox catalogue has five products (B2B-APIs, PSD2-AISP-PISP, PS
 
 ## 4. Sandbox specifics
 
-**Live run, 2026-11-27 evening** (app "Ena", redirect URI `https://localhost/callback`, `uv run ena-boc`):
+**Resolved, 2026-11-28** (#24): following BoC's step-by-step sandbox guide (from the mentors), two changes made the consent return a `code`:
+
+- The app also needs the **B2B-APIs-Product** plan (BOC B2B Plan) in the sandbox portal, next to PSD2-AISP-PISP-Product. Its redirect URI is `https://localhost/`
+- The authorize URL must **not** carry `state`. With the B2B plan in place, a payment consent opened with `state=...` still came back `error=badstate`; the same consent without `state` came back with `code`. `ena-boc` sends no `state` since #35
+
+With both, a subscription reached `ACTV` (consent, `code`, user token, `PATCH`) and a payment reached `CPLT` (consent, `code`, user token, `execute`).
+
+**Superseded: live run, 2026-11-27 evening** (kept as a record; the resolution above replaces its open question) (app "Ena", redirect URI `https://localhost/callback`, `uv run ena-boc`):
 
 | Step | Result |
 |---|---|
@@ -117,7 +124,7 @@ Not found. The sandbox catalogue has five products (B2B-APIs, PSD2-AISP-PISP, PS
 | Sign + initiate payment | Works: `authCodeNeeded: true`, a `paymentId` |
 | Payment consent | Same `error=badstate` |
 
-`badstate` comes from IBM API Connect's OAuth provider: the authorize URL gains an `rstate` when it sends the browser to the login page, and the redirect back fails that check. Open: is it a sandbox fault, or an app setting (redirect URI, the app's OAuth provider)? Asked BoC.
+`badstate` comes from IBM API Connect's OAuth provider: the authorize URL gains an `rstate` when it sends the browser to the login page, and the redirect back fails that check. The open question then (a sandbox fault, or an app setting?) is answered by the resolution above: the missing B2B plan and the `state` parameter.
 
 - Test login for both consent screens: `999999` / `112233`
 - Sample accounts: `351012345671` (ANDREAS MICHAEL, EUR, IBAN `CY11002003510000000012345671`); also `351092345672`, `351012345673`, `351012345674`, `351012345675`, `351092345676` in the activate sample

@@ -34,7 +34,7 @@ class BocSettings(BaseSettings):
 
     client_id: str = Field(min_length=1)
     client_secret: SecretStr
-    redirect_uri: str = "https://localhost/callback"
+    redirect_uri: str = "https://localhost/"
     api_base: str = "https://sandbox-apis.bankofcyprus.com/df-boc-org-sb/sb/psd2"
     sign_url: str = "https://sandbox-apis.bankofcyprus.com/df-boc-org-sb/sb/jwssignverifyapi/sign"
     subscription_id: str | None = None
@@ -95,8 +95,12 @@ class AuthCode:
             raise ValueError("empty authorization code")
 
     @classmethod
-    def from_redirect(cls, redirect_url: str, expected_state: str) -> AuthCode:
-        """Read the code, checking the `state` we sent in the consent URL came back unchanged."""
+    def from_redirect(cls, redirect_url: str) -> AuthCode:
+        """Read the code from the URL the browser landed on after consent.
+
+        No `state` check: the consent URL carries none, since the sandbox refuses one with
+        `error=badstate` (docs/boc-notes.md §4).
+        """
         query = parse_qs(urlsplit(redirect_url.strip()).query)
         if "error" in query:
             details = query.get("error_description", [""])[0]
@@ -104,9 +108,6 @@ class AuthCode:
         codes = query.get("code")
         if not codes:
             raise ValueError(f"no `code` parameter in the redirect URL: {redirect_url!r}")
-        states = query.get("state")
-        if states != [expected_state]:
-            raise BocError(f"redirect state {states} does not match the consent URL's state")
         return cls(codes[0])
 
 
@@ -309,11 +310,11 @@ class BocClient:
             )
         )
 
-    def subscription_consent_url(self, subscription_id: SubscriptionId, state: str) -> str:
-        return self._authorize_url(state, {"subscriptionid": str(subscription_id)})
+    def subscription_consent_url(self, subscription_id: SubscriptionId) -> str:
+        return self._authorize_url({"subscriptionid": str(subscription_id)})
 
-    def payment_consent_url(self, payment_id: PaymentId, state: str) -> str:
-        return self._authorize_url(state, {"paymentid": str(payment_id)})
+    def payment_consent_url(self, payment_id: PaymentId) -> str:
+        return self._authorize_url({"paymentid": str(payment_id)})
 
     # Subscription (account and payment consent)
 
@@ -464,12 +465,9 @@ class BocClient:
         )
         return self._json(response, f"token_{form['grant_type']}")
 
-    def _authorize_url(self, state: str, extra: dict[str, str]) -> str:
-        # OAuth CSRF protection; BoC echoes it back on the redirect
-        if not state:
-            raise ValueError("the consent URL needs a non-empty state")
+    def _authorize_url(self, extra: dict[str, str]) -> str:
+        # No `state`: the sandbox answers a consent URL carrying one with `error=badstate`
         query = {
-            "state": state,
             "response_type": "code",
             "redirect_uri": self.settings.redirect_uri,
             "scope": "UserOAuth2Security",

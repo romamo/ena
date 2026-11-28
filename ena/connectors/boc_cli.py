@@ -8,7 +8,7 @@
     uv run ena-boc pay --debtor 351012345671 --amount 30   # prints the payment consent URL
     uv run ena-boc execute '<redirect URL>'    # CPLT
 
-After each consent the browser lands on the redirect URI (https://localhost/callback), which
+After each consent the browser lands on the redirect URI (https://localhost/), which
 does not load: copy the whole URL from the address bar, it carries the `code`.
 Add `--record` to save each raw response to fixtures/boc/ (tokens redacted).
 """
@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import secrets
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -117,16 +116,15 @@ def _token(client: BocClient, _: argparse.Namespace) -> None:
 
 def _subscribe(client: BocClient, _: argparse.Namespace) -> None:
     subscription = client.create_subscription(client.client_token())
-    state = secrets.token_urlsafe(16)
-    _save_state(subscription_id=subscription.subscription_id, subscription_state=state)
+    _save_state(subscription_id=subscription.subscription_id)
     print(f"Subscription {subscription.subscription_id} is {subscription.status}.")
     print("Open this URL, log in as 999999 / 112233, pick the accounts and consent:\n")
-    print(client.subscription_consent_url(SubscriptionId(subscription.subscription_id), state))
+    print(client.subscription_consent_url(SubscriptionId(subscription.subscription_id)))
     print("\nThen run: uv run ena-boc activate '<the URL you landed on>'")
 
 
 def _activate(client: BocClient, args: argparse.Namespace) -> None:
-    code = AuthCode.from_redirect(args.redirect_url, _require_state("subscription_state"))
+    code = AuthCode.from_redirect(args.redirect_url)
     user_token = client.user_token(code)  # exchange at once: the code is short-lived
     subscription_id = SubscriptionId(_require_state("subscription_id"))
     current = _one(client.get_subscription(client.client_token(), subscription_id))
@@ -173,16 +171,15 @@ def _pay(client: BocClient, args: argparse.Namespace) -> None:
     signed = client.sign_payment(order)
     initiated = client.initiate_payment(client.client_token(), signed)
     payment_id = initiated.payment.payment_id
-    state = secrets.token_urlsafe(16)
-    _save_state(payment_id=payment_id, payment_state=state)
+    _save_state(payment_id=payment_id)
     print(f"Payment {payment_id} initiated, consent needed: {initiated.auth_code_needed}.")
     print("Open this URL, log in as 999999 / 112233 and approve the payment:\n")
-    print(client.payment_consent_url(PaymentId(payment_id), state))
+    print(client.payment_consent_url(PaymentId(payment_id)))
     print("\nThen run: uv run ena-boc execute '<the URL you landed on>'")
 
 
 def _execute(client: BocClient, args: argparse.Namespace) -> None:
-    code = AuthCode.from_redirect(args.redirect_url, _require_state("payment_state"))
+    code = AuthCode.from_redirect(args.redirect_url)
     user_token = client.user_token(code)
     payment_id = PaymentId(_require_state("payment_id"))
     result = client.execute_payment(user_token, payment_id)
