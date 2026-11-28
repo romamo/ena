@@ -432,3 +432,13 @@ def test_a_trailing_slash_confirms_without_a_redirect(http: TestClient) -> None:
     assert "<a href='/'>Back to Ena</a>" in page.text
     receipt = http.get(f"/consents/{consent['card']['id']}").json()["card"]
     assert receipt["result"] == "paid"
+
+
+def test_a_blank_code_is_no_confirmation_and_keeps_it_open(http: TestClient) -> None:
+    consent = _card(sse(http.post("/chat", json={"text": f"pay {DAIRY.id}"}).text))
+
+    page = http.get("/boc/consent", params={"code": " "})
+
+    assert page.status_code == 400
+    assert "<h1>No confirmation</h1>" in page.text
+    assert http.get(f"/consents/{consent['card']['id']}").json()["card_kind"] == "consent"

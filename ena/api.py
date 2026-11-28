@@ -177,7 +177,7 @@ def create_app(
             try:
                 if error is not None:
                     receipt = owner_gate.refuse(f"{error} {error_description or ''}".strip())
-                elif code:
+                elif code is not None and code.strip():
                     receipt = owner_gate.confirm(code)
                 else:
                     return _page(400, "No confirmation", "The bank sent no code back.")
