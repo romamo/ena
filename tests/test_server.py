@@ -18,8 +18,9 @@ from fastapi.testclient import TestClient
 
 from ena.agent import AgentRunner, AgentSettings
 from ena.connectors.jcc import JccSettings
+from ena.gate import PaymentBank
 from ena.mcp_server import EnaTools, call_tool
-from ena.seed import FIRST_DAY, LAST_DAY, LEAN_WEEK
+from ena.seed import FIRST_DAY, LAST_DAY, LEAN_WEEK, synthetic_month
 from ena.server import (
     DEFAULT_DAY,
     DEFAULT_HOST,
@@ -151,6 +152,56 @@ def test_the_stand_in_bank_says_payments_are_simulated(caplog: pytest.LogCapture
     with caplog.at_level(logging.WARNING, logger="ena.server"):
         build(settings(), runner=Agents()).close()
     assert SIMULATED_PAYMENTS in caplog.messages
+
+
+DAIRY, FLOUR = synthetic_month().invoices
+
+
+@dataclass
+class Payer:
+    """Pays the invoice whose id is the prompt, through the real tool."""
+
+    tools: EnaTools
+
+    async def run(self, prompt: str) -> AsyncIterator[str]:
+        call_tool(self.tools, "pay_invoice", {"invoice_id": prompt})
+        yield "Done."
+
+
+@dataclass
+class RealBank:
+    """A bocAPI-shaped bank: its payments are not simulated."""
+
+    simulated: bool = False
+
+    def pay(self, action: str, amount_cents: int, ref: str) -> str:
+        return "CPLT"
+
+
+def _receipt_cards(bank: PaymentBank | None) -> list[dict[str, Any]]:
+    """The receipt cards the owner sees: the dairy paid in the chat, the flour approved."""
+    server = build(settings(), runner=Payer, bank=bank)
+    with TestClient(server.app) as http:
+        paid = sse(http.post("/chat", json={"text": DAIRY.id}).text)
+        asked = sse(http.post("/chat", json={"text": FLOUR.id}).text)
+        approved = http.post(f"/approvals/{asked[0][1]['card']['id']}/approve").json()
+    server.close()
+    assert [paid[0][1]["card_kind"], approved["card_kind"]] == ["receipt", "receipt"]
+    return [paid[0][1]["card"], approved["card"]]
+
+
+def test_a_stand_in_payment_shows_as_simulated_in_the_chat() -> None:
+    cards = _receipt_cards(None)
+
+    assert [(card["result"], card["simulated"]) for card in cards] == [("paid", True)] * 2
+    assert all("simulated" in card["explanation"] for card in cards)
+
+
+def test_a_payment_through_a_real_bank_does_not_show_as_simulated() -> None:
+    cards = _receipt_cards(RealBank())
+
+    assert [(card["result"], card["simulated"]) for card in cards] == [("paid", False)] * 2
+    assert not any("simulated" in card["explanation"] for card in cards)
 
 
 def test_the_store_file_is_created_under_its_folder(tmp_path: Path) -> None:
