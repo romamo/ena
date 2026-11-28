@@ -41,6 +41,7 @@ from ena.agent import (
 )
 from ena.gate import Gate
 from ena.mcp_server import TOOLS, EnaTools, Ledger, ReplayDay, build_server, call_tool
+from ena.models import EventStatus
 from ena.seed import AMOUNTS, BOOKED_EVENT_ID, LEAN_WEEK, LOAN_DAY, RENT_DAY, synthetic_month
 from ena.store import Store
 
@@ -179,9 +180,20 @@ def test_the_expected_figures_follow_the_seed() -> None:
     assert gap > instalment  # the reserve alone does not cover it
     loan = -(-gap // LOAN_STEP) * LOAN_STEP
 
-    # The event advance on the lean Monday: the lean week leaves no spare cash, so the
-    # advance is the booked wedding's costs less its deposit, repaid from its final payment
+    # The event advance on the lean Monday: the costs fall due 7 days before the wedding
+    # (the most any past event took), after the lean week, which closes below the
+    # threshold, so there is no spare cash and the advance is the costs less the deposit,
+    # repaid from the final payment
     wedding = next(event for event in MONTH.events if event.id == BOOKED_EVENT_ID)
+    completed = [event for event in MONTH.events if event.status is EventStatus.COMPLETED]
+    costs_before = max(
+        (event.event_date - event.costs_paid_date).days
+        for event in completed
+        if event.costs_paid_date is not None
+    )
+    assert costs_before == 7
+    assert LEAN_WEEK <= wedding.event_date - dt.timedelta(days=costs_before)
+    assert LEAN_WEEK_CLOSING < instalment + out // 4  # the lean week: spare cash is 0
     advance = wedding.costs_cents - wedding.deposit_cents
 
     expected = {

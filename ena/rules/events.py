@@ -18,13 +18,18 @@ The advance (`event_advance`) for a booked event:
 
     gap = the event's costs - its deposit - the spare cash the caller passes
 
-It is offered when the pattern exists, cancellations are at most 1 in 10
-(`MAX_CANCELLED_PER_10`), the costs are neither paid nor due yet, the gap is above zero
-and the final payment can repay it. Its amount is the gap. It runs from the expected costs date (the
-event date minus the most days before) to the expected final-payment date (the event date
-plus the most days after), at least 1 day, and is repaid from the final payment.
-Otherwise it returns a refusal with the reason. `simulated=True`: there is no lending API,
-so it is an offer to show the owner, never a promise.
+It is offered when the event is eligible and the gap is above zero and the final payment
+can repay it. Eligible (`advance_eligibility`, which needs no spare cash, so a caller can
+ask it before reading the forecast): the event is booked, the pattern exists,
+cancellations are at most 1 in 10 (`MAX_CANCELLED_PER_10`) and the costs are neither paid
+nor due yet. Its amount is the gap. It runs from the expected costs date (the event date
+minus the most days before, `EventPattern.costs_date`) to the expected final-payment date
+(the event date plus the most days after), at least 1 day, and is repaid from the final
+payment. Otherwise it returns a refusal with the reason. `simulated=True`: there is no
+lending API, so it is an offer to show the owner, never a promise.
+
+The offer's id names the event and the amount (`advance-<event id>-<cents>`): an advance
+of another amount is another offer.
 
 The loan never changes (§3 rule 4): the advance is a new, separate offer.
 """
@@ -69,6 +74,10 @@ class EventPattern(_Result):
     final_days_after_min: _Days
     final_days_after_max: _Days
 
+    def costs_date(self, event: Event) -> dt.date:
+        """When the event's costs are expected: the most days before it seen."""
+        return event.event_date - dt.timedelta(days=self.costs_days_before_max)
+
     @property
     def cancellations_ok(self) -> bool:
         """At most 1 cancellation in 10 completed or cancelled events."""
@@ -105,16 +114,10 @@ def event_pattern(events: Sequence[Event]) -> EventPattern | None:
     )
 
 
-def event_advance(
-    event: Event,
-    events: Sequence[Event],
-    *,
-    spare_cents: NonNegativeCents,
-    today: dt.date,
-) -> Offer | AdvanceRefusal:
-    """Offer a simulated advance for the booked event's costs gap, or say why not."""
-    if spare_cents < 0:
-        raise ValueError(f"spare_cents is never negative, got {spare_cents}")
+def advance_eligibility(
+    event: Event, events: Sequence[Event], *, today: dt.date
+) -> EventPattern | AdvanceRefusal:
+    """The pattern when the event may get an advance, whatever the spare cash, else why not."""
     if event.status is not EventStatus.BOOKED:
         return _refuse(event, f"the event is {event.status}, not booked")
     if event.costs_paid_date is not None:
@@ -132,9 +135,26 @@ def event_advance(
             f"{pattern.cancelled} of {total} events were cancelled, more than"
             f" {MAX_CANCELLED_PER_10} in 10",
         )
-    costs_date = event.event_date - dt.timedelta(days=pattern.costs_days_before_max)
+    costs_date = pattern.costs_date(event)
     if costs_date < today:
         return _refuse(event, f"the costs were due on {costs_date}, before today {today}")
+    return pattern
+
+
+def event_advance(
+    event: Event,
+    events: Sequence[Event],
+    *,
+    spare_cents: NonNegativeCents,
+    today: dt.date,
+) -> Offer | AdvanceRefusal:
+    """Offer a simulated advance for the booked event's costs gap, or say why not."""
+    if spare_cents < 0:
+        raise ValueError(f"spare_cents is never negative, got {spare_cents}")
+    pattern = advance_eligibility(event, events, today=today)
+    if isinstance(pattern, AdvanceRefusal):
+        return pattern
+    costs_date = pattern.costs_date(event)
     gap = event.costs_cents - event.deposit_cents - spare_cents
     if gap <= 0:
         return _refuse(event, "the deposit and the spare cash cover the costs")
@@ -143,7 +163,7 @@ def event_advance(
     final_date = event.event_date + dt.timedelta(days=pattern.final_days_after_max)
     term_days = max((final_date - costs_date).days, 1)
     return Offer(
-        id=f"advance-{event.id}",
+        id=f"advance-{event.id}-{gap}",
         kind=OfferKind.EVENT_ADVANCE,
         amount_cents=gap,
         term_days=term_days,

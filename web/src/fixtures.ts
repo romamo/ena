@@ -48,7 +48,7 @@ export const LOAN: CardEvent = {
   kind: "card",
   card_kind: "offer",
   card: {
-    id: "loan-20261116",
+    id: "loan-20261116-100000",
     kind: "loan",
     amount_cents: 100000,
     term_days: 730,

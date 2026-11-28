@@ -22,7 +22,7 @@ from ena.mcp_server import (
     call_tool,
 )
 from ena.models import ApprovalRequest, Forecast, InvoiceStatus, Offer, OfferKind, Receipt
-from ena.replay import TZ, replay
+from ena.replay import TZ, DayStarted, replay
 from ena.seed import BOOKED_EVENT_ID, LEAN_WEEK, synthetic_month
 from ena.store import Store
 
@@ -237,7 +237,7 @@ def test_the_event_advance_leaves_one_receipt() -> None:
     s.tools.propose_event_advance(BOOKED_EVENT_ID)
     receipts = s.store.receipts()
     assert len(receipts) == 1
-    assert receipts[0].ref == f"advance-{BOOKED_EVENT_ID}"
+    assert receipts[0].ref == f"advance-{BOOKED_EVENT_ID}-280000"
     assert receipts[0].result == "offered"
 
 
@@ -247,6 +247,31 @@ def test_a_completed_event_gets_no_advance_and_no_receipt() -> None:
     assert result.offer is None
     assert result.note == "No advance: the event is completed, not booked"
     assert s.store.receipts() == []
+
+
+def test_an_advance_at_another_amount_gets_its_own_receipt() -> None:
+    # 2 November leaves spare cash before the costs (€2,134.53); the lean Monday none
+    s = setup(dt.date(2026, 11, 2))
+    first = s.tools.propose_event_advance(BOOKED_EVENT_ID)
+    s.day.observe(DayStarted(at=NOW, day=LEAN_WEEK))
+    second = s.tools.propose_event_advance(BOOKED_EVENT_ID)
+    assert first.offer is not None and second.offer is not None
+    assert first.offer.id != second.offer.id
+    receipts = s.store.receipts()
+    assert [(r.ref, r.amount_cents) for r in receipts] == [
+        (first.offer.id, first.offer.amount_cents),
+        (second.offer.id, 280_000),
+    ]
+    assert first.offer.amount_cents != 280_000
+
+
+def test_on_the_first_day_a_refusal_needs_no_forecast() -> None:
+    # 1 November: the forecast has no history yet, but a completed event is refused anyway
+    s = setup(MONTH.first_day)
+    result = s.tools.propose_event_advance("syn-event-0001")
+    assert result.note == "No advance: the event is completed, not booked"
+    with pytest.raises(ToolError, match="no forecast"):
+        s.tools.propose_event_advance(BOOKED_EVENT_ID)
 
 
 def test_an_unknown_event_is_refused() -> None:
@@ -260,7 +285,7 @@ def test_the_loan_offer_leaves_one_receipt() -> None:
     s.tools.propose_loan()
     receipts = s.store.receipts()
     assert len(receipts) == 1
-    assert receipts[0].ref == "loan-20261116"
+    assert receipts[0].ref == "loan-20261116-100000"
     assert receipts[0].result == "offered"
     assert receipts[0].amount_cents == 100_000
 

@@ -30,8 +30,10 @@ The bakery also caters weddings and christenings, paid as a deposit at booking a
 final payment after the event (`events`): 12 completed and 1 cancelled since January
 2025, the history the event advance reads, and one booked wedding on Saturday 19
 December 2026 (`BOOKED_EVENT_ID`): €8,000, a €2,000 deposit and €4,800 of costs, the
-build plan's worked example (docs/build-plan.md §7). The events' money is not on the
-statement: the month's cash story above stays as it is.
+numbers of the build plan's worked example (docs/build-plan.md §7). The spare cash is not
+the example's €1,000: it comes from the forecast, which leaves none in the lean week, so
+the advance offered on the lean Monday is €2,800 for 16 days, not €1,800. The events'
+money is not on the statement: the month's cash story above stays as it is.
 
 The amounts are placeholders until the interviews: they all sit in `AMOUNTS`.
 """
