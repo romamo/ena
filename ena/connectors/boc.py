@@ -466,7 +466,8 @@ class BocClient:
         return self._json(response, f"token_{form['grant_type']}")
 
     def _authorize_url(self, extra: dict[str, str]) -> str:
-        # No `state`: the sandbox answers a consent URL carrying one with `error=badstate`
+        # No `state`, and `redirect_uri` unencoded (`safe=":/"`): the sandbox answers a consent
+        # URL carrying `state`, or `redirect_uri=https%3A%2F%2Flocalhost%2F`, with `error=badstate`
         query = {
             "response_type": "code",
             "redirect_uri": self.settings.redirect_uri,
@@ -474,7 +475,7 @@ class BocClient:
             "client_id": self.settings.client_id,
             **extra,
         }
-        return f"{self.settings.api_base}/oauth2/authorize?{urlencode(query)}"
+        return f"{self.settings.api_base}/oauth2/authorize?{urlencode(query, safe=':/')}"
 
     def _call(
         self,

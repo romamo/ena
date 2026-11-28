@@ -106,6 +106,18 @@ def test_consent_urls_carry_the_subscription_or_payment_and_no_state() -> None:
     assert "state" not in pay
 
 
+def test_consent_urls_carry_the_redirect_uri_unencoded() -> None:
+    # The sandbox answers `redirect_uri=https%3A%2F%2Flocalhost%2F` with `error=badstate`;
+    # the same consent with `redirect_uri=https://localhost/` returns a `code` (#24)
+    boc = client(httpx.MockTransport(lambda _: httpx.Response(500)))
+
+    for url in (
+        boc.subscription_consent_url(SubscriptionId("Sub1")),
+        boc.payment_consent_url(PaymentId("P1")),
+    ):
+        assert "redirect_uri=https://localhost/&" in urlsplit(url).query
+
+
 def test_auth_code_is_read_from_the_redirect() -> None:
     assert AuthCode.from_redirect("https://localhost/?code=abc").value == "abc"
     with pytest.raises(ValueError, match="no `code`"):

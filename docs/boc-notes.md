@@ -107,6 +107,7 @@ Not found. The sandbox catalogue has five products (B2B-APIs, PSD2-AISP-PISP, PS
 
 - The app also needs the **B2B-APIs-Product** plan (BOC B2B Plan) in the sandbox portal, next to PSD2-AISP-PISP-Product. Its redirect URI is `https://localhost/`
 - The authorize URL must **not** carry `state`. With the B2B plan in place, a payment consent opened with `state=...` still came back `error=badstate`; the same consent without `state` came back with `code`. `ena-boc` sends no `state` since #35
+- The authorize URL must carry `redirect_uri` **unencoded** (`redirect_uri=https://localhost/`). With no `state`, a subscription consent opened with `redirect_uri=https%3A%2F%2Flocalhost%2F` came back `error=badstate` (no `state` in the return either), three tries on 2026-11-28; the same consent with the URI unencoded came back with `code` and `ena-boc activate` reached `ACTV` (#24)
 
 With both, a subscription reached `ACTV` (consent, `code`, user token, `PATCH`) and a payment reached `CPLT` (consent, `code`, user token, `execute`).
 
