@@ -24,6 +24,7 @@ export default defineConfig({
       "/bank": toApi,
       // BoC's screen sends the browser back here after the owner confirms a payment
       "/boc": toApi,
+      "/jinius": toApi,
     },
   },
   test: {

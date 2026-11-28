@@ -171,4 +171,45 @@ describe("Dashboard", () => {
     );
     expect((await screen.findByRole("alert")).textContent).toBe("no forecast on 2026-11-30");
   });
+
+  it("reads the invoices from Jinius only when the owner taps the button", async () => {
+    const feed = {
+      source: "live",
+      note: "Jinius integration environment, live",
+      invoices: [
+        {
+          number: "EFM-2026-002",
+          supplier: "Ena Flour Mill Ltd",
+          amount_cents: 124000,
+          issue_date: "2026-11-28",
+          due_date: "2026-12-11",
+          status: "WaitingApproval",
+        },
+      ],
+    };
+    const fetcher = answering({ ...ROUTES, "/jinius/invoices": () => Response.json(feed) });
+    openDashboard(fetcher);
+    fireEvent.click(screen.getByRole("tab", { name: "Jinius" }));
+    expect(fetcher).not.toHaveBeenCalledWith("/jinius/invoices");
+
+    fireEvent.click(screen.getByRole("button", { name: "Read invoices from Jinius" }));
+    const invoice = await screen.findByRole("article", { name: "Invoice EFM-2026-002" });
+    expect(invoice.textContent).toContain("Ena Flour Mill Ltd");
+    expect(invoice.textContent).toContain("€1,240.00");
+    expect(invoice.textContent).toContain("due 11 Dec");
+    expect(invoice.textContent).toContain("Waiting approval");
+    expect(screen.getByText(/Live · Jinius integration environment, live/)).toBeTruthy();
+  });
+
+  it("names why Jinius could not be read", async () => {
+    openDashboard(
+      answering({
+        ...ROUTES,
+        "/jinius/invoices": () => Response.json({ detail: "Jinius is not configured" }, { status: 503 }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Jinius" }));
+    fireEvent.click(screen.getByRole("button", { name: "Read invoices from Jinius" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Jinius is not configured");
+  });
 });

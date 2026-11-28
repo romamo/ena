@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from ena.agent import AgentRunner, AgentSettings
 from ena.connectors.jcc import JccSettings
+from ena.connectors.jinius import JiniusSettings
 from ena.gate import PaymentBank
 from ena.mcp_server import EnaTools, call_tool
 from ena.seed import FIRST_DAY, LAST_DAY, LEAN_WEEK, synthetic_month
@@ -28,6 +29,7 @@ from ena.server import (
     DEFAULT_STORE,
     NO_CREDENTIAL,
     NO_JCC,
+    NO_JINIUS,
     SIMULATED_PAYMENTS,
     Server,
     ServeSettings,
@@ -74,6 +76,7 @@ def settings(**changes: Any) -> ServeSettings:
         "cache": None,
         "agent": AgentSettings(_env_file=None),
         "jcc": None,
+        "jinius": None,
         "model_credential": False,
     }
     return ServeSettings(**(base | changes))
@@ -279,3 +282,76 @@ def test_a_partial_jcc_section_fails_at_start(tmp_path: Path) -> None:
 )
 def test_the_model_credential(environ: dict[str, str], found: bool) -> None:
     assert has_model_credential(environ) is found
+
+
+# Jinius: the dashboard's "Read invoices from Jinius" button
+
+JINIUS_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "jinius"
+
+
+def jinius_settings() -> JiniusSettings:
+    return JiniusSettings(
+        client_id="buyer-id",
+        client_secret="buyer-secret",
+        base_url="https://api.jinius.test",
+        _env_file=None,
+    )
+
+
+def fake_jinius(payable: httpx.Response) -> httpx.MockTransport:
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/token":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 300})
+        assert (request.method, request.url.path) == ("GET", "/v3/invoices/payable")
+        return payable
+
+    return httpx.MockTransport(handle)
+
+
+def test_without_jinius_settings_the_invoices_route_names_them() -> None:
+    server = build(settings(), runner=Agents())
+    with TestClient(server.app) as http:
+        answer = http.get("/jinius/invoices")
+    server.close()
+    assert answer.status_code == 503
+    assert answer.json() == {"detail": NO_JINIUS}
+
+
+def test_the_invoices_route_reads_jinius_live() -> None:
+    page = json.loads((JINIUS_FIXTURES / "invoices_payable.json").read_text(encoding="utf-8"))
+    server = build(
+        settings(jinius=jinius_settings()),
+        runner=Agents(),
+        jinius_transport=fake_jinius(httpx.Response(200, json=page)),
+    )
+    with TestClient(server.app) as http:
+        answer = http.get("/jinius/invoices")
+    server.close()
+    assert answer.status_code == 200
+    body = answer.json()
+    assert body["source"] == "live"
+    assert sorted(i["number"] for i in body["invoices"]) == ["EFM-2026-001", "EFM-2026-002"]
+
+
+def test_a_jinius_refusal_is_answered_502_with_its_detail() -> None:
+    server = build(
+        settings(jinius=jinius_settings()),
+        runner=Agents(),
+        jinius_transport=fake_jinius(httpx.Response(403)),
+    )
+    with TestClient(server.app) as http:
+        answer = http.get("/jinius/invoices")
+    server.close()
+    assert answer.status_code == 502
+    assert "plan lacks this API" in answer.json()["detail"]
+
+
+def test_jinius_settings_from_an_env_file(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("JINIUS_CLIENT_ID=\n", encoding="utf-8")
+    assert load_settings(parser().parse_args(["--memory"]), {}, env).jinius is None
+
+    env.write_text("JINIUS_CLIENT_ID=buyer\nJINIUS_CLIENT_SECRET=s\n", encoding="utf-8")
+    loaded = load_settings(parser().parse_args(["--memory"]), {}, env)
+    assert loaded.jinius is not None
+    assert loaded.jinius.client_id == "buyer"

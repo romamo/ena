@@ -33,6 +33,12 @@ with 409. No tool can reach these either.
 approve and write nothing, and add nothing to a chat turn. A day with no forecast is
 answered 409.
 
+`GET /jinius/invoices` reads the invoices sent to the business from the Jinius integration
+environment (`ena/connectors/jinius.py`), on the owner's tap: live, or the saved responses
+when Jinius can't be reached, and the answer says which. It reads only: nothing is
+approved, paid or booked. Without the Jinius client in `.env` it is answered 503, and any
+other Jinius refusal 502 with its detail.
+
 `POST /jcc/callback` takes JCC's form-encoded webhook (docs/jcc-notes.md §0, §7 step 4):
 
 1. The checksum is verified first; a missing or wrong one is refused with 403, books nothing
@@ -49,7 +55,7 @@ The callback secret never appears in an answer.
 from __future__ import annotations
 
 import html
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Annotated, Literal
 from urllib.parse import parse_qsl
 
@@ -70,6 +76,7 @@ from ena.connectors.jcc import (
     confirm_deposit,
     verify_checksum,
 )
+from ena.connectors.jinius import JiniusError, JiniusNotConfigured, PayableFeed
 from ena.dashboard import Credit, Dashboard, ForecastView, Overview, Receipts
 from ena.gate import Gate, GateError, PaymentResult
 from ena.mcp_server import ToolError
@@ -112,12 +119,13 @@ def create_app(
     gate: Gate | None = None,
     advances: Advances | None = None,
     dashboard: Dashboard | None = None,
+    jinius: Callable[[], PayableFeed] | None = None,
 ) -> FastAPI:
     """The API, booking into `store` and confirming deposits through `jcc`.
 
     With `chat` it serves `POST /chat`; with `gate`, the owner's approve and decline; with
     `advances`, the owner's accept and decline of an event advance; with
-    `dashboard`, the dashboard's reads.
+    `dashboard`, the dashboard's reads; with `jinius`, the invoices read from Jinius.
     """
     if not callback_secret.get_secret_value():
         # An empty key would accept any callback signed with HMAC-SHA256 keyed with b""
@@ -215,6 +223,19 @@ def create_app(
                 return board.credit()
             except ToolError as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
+
+    if jinius is not None:
+        read_jinius = jinius
+
+        @app.get("/jinius/invoices")
+        def jinius_invoices() -> PayableFeed:
+            # A plain def: the Jinius client is synchronous, so FastAPI runs it off the loop
+            try:
+                return read_jinius()
+            except JiniusNotConfigured as error:
+                raise HTTPException(status_code=503, detail=str(error)) from error
+            except JiniusError as error:
+                raise HTTPException(status_code=502, detail=str(error)) from error
 
     if advances is not None:
         owner_advances = advances

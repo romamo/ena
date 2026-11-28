@@ -2,6 +2,8 @@ import { useCallback, useContext, useEffect, useState, type ReactNode } from "re
 import {
   ApiError,
   getDashboard,
+  readJinius,
+  type JiniusFeed,
   type Credit,
   type DashboardRoutes,
   type ForecastView,
@@ -21,6 +23,7 @@ const TABS: { id: BoardTab; label: string }[] = [
   { id: "receipts", label: "Receipts" },
   { id: "forecast", label: "Forecast" },
   { id: "credit", label: "Loans" },
+  { id: "jinius", label: "Jinius" },
 ];
 
 type Load<T> = { state: "loading" } | { state: "ready"; data: T } | { state: "failed"; message: string };
@@ -86,6 +89,7 @@ export function Dashboard({
           {tab === "receipts" ? <ReceiptsTab {...props} /> : null}
           {tab === "forecast" ? <ForecastTab {...props} /> : null}
           {tab === "credit" ? <CreditTab {...props} /> : null}
+          {tab === "jinius" ? <JiniusTab /> : null}
         </div>
       </OnDecided>
     </section>
@@ -356,5 +360,82 @@ function CreditTab({ open, version, onAsk, busy }: TabProps) {
         </>
       )}
     </Loaded>
+  );
+}
+
+// Jinius
+
+/** Jinius's status names as the owner reads them; an unknown one is shown as Jinius sent it. */
+const JINIUS_STATUS: Record<string, string> = {
+  WaitingApproval: "Waiting approval",
+  Approved: "Approved",
+  Paid: "Paid",
+  Rejected: "Rejected",
+  Voided: "Voided",
+};
+
+/** Reads the invoices sent to the business from Jinius, only when the owner taps. */
+function JiniusTab() {
+  const fetcher = useContext(FetchContext);
+  const [load, setLoad] = useState<Load<JiniusFeed> | null>(null);
+  const read = () => {
+    setLoad({ state: "loading" });
+    readJinius(fetcher).then(
+      (data) => setLoad({ state: "ready", data }),
+      (error: unknown) =>
+        setLoad({
+          state: "failed",
+          message: error instanceof ApiError ? error.message : "Jinius can't be reached, try again",
+        }),
+    );
+  };
+  return (
+    <div className="board-body">
+      <section className="panel" aria-label="Invoices on Jinius">
+        <h2 className="eyebrow">Invoices on Jinius</h2>
+        <p className="muted small">The invoices your suppliers sent you through Jinius, read when you tap.</p>
+        <button type="button" className="primary" disabled={load?.state === "loading"} onClick={read}>
+          {load?.state === "loading" ? "Reading…" : "Read invoices from Jinius"}
+        </button>
+      </section>
+      {load?.state === "failed" ? (
+        <p className="error board-note" role="alert">
+          {load.message}
+        </p>
+      ) : null}
+      {load?.state === "ready" ? <JiniusInvoices feed={load.data} /> : null}
+    </div>
+  );
+}
+
+function JiniusInvoices({ feed }: { feed: JiniusFeed }) {
+  return (
+    <section className="stack" aria-label="Invoices read from Jinius">
+      <p className={feed.source === "live" ? "source live" : "source saved"}>
+        {feed.source === "live" ? "Live" : "Saved data"} · {feed.note}
+      </p>
+      <h2 className="eyebrow">
+        {feed.invoices.length} {feed.invoices.length === 1 ? "invoice" : "invoices"}
+      </h2>
+      {feed.invoices.length === 0 ? (
+        <p className="calm">No invoices on Jinius yet.</p>
+      ) : (
+        feed.invoices.map((invoice) => (
+          <article key={invoice.number} className="panel jinius-invoice" aria-label={`Invoice ${invoice.number}`}>
+            <div className="jinius-row">
+              <b>{invoice.supplier}</b>
+              <b className="amount">{euro(invoice.amount_cents)}</b>
+            </div>
+            <div className="jinius-row muted small">
+              <span>
+                {invoice.number} · issued {day(invoice.issue_date)}
+                {invoice.due_date === null ? "" : ` · due ${day(invoice.due_date)}`}
+              </span>
+              <span>{JINIUS_STATUS[invoice.status] ?? invoice.status}</span>
+            </div>
+          </article>
+        ))
+      )}
+    </section>
   );
 }
