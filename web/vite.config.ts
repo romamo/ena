@@ -14,6 +14,11 @@ export default defineConfig({
       "/chat": api,
       "/approvals": api,
       "/dashboard": api,
+      "/offers": api,
+      "/consents": api,
+      "/bank": api,
+      // BoC's screen sends the browser back here after the owner confirms a payment
+      "/boc": api,
     },
   },
   test: {

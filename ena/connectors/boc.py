@@ -24,6 +24,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BOC_DATE_FORMAT = "%d/%m/%Y"
 
+SAMPLE_CREDITOR = "48193222324233"
+"""BoC's documented sample payee: a SWIFT transfer the sandbox accepts (boc-notes §4)."""
+SAMPLE_CREDITOR_BANK = "CITIUS33"
+
 
 class BocError(RuntimeError):
     """bocAPI answered with something other than success."""
@@ -38,8 +42,14 @@ class BocSettings(BaseSettings):
     api_base: str = "https://sandbox-apis.bankofcyprus.com/df-boc-org-sb/sb/psd2"
     sign_url: str = "https://sandbox-apis.bankofcyprus.com/df-boc-org-sb/sb/jwssignverifyapi/sign"
     subscription_id: str | None = None
+    account_id: str | None = None
+    """The sandbox account Ena pays from and reads (`ena-serve --bank boc`)."""
+    creditor_account: str = SAMPLE_CREDITOR
+    """Whom `ena-serve --bank boc` pays every invoice to: the synthetic suppliers have no
+    sandbox account, so the sample payee stands in for them."""
+    creditor_bank: str = SAMPLE_CREDITOR_BANK
 
-    @field_validator("subscription_id", mode="before")
+    @field_validator("subscription_id", "account_id", mode="before")
     @classmethod
     def _empty_is_none(cls, value: object) -> object:
         return None if value == "" else value

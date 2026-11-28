@@ -13,7 +13,7 @@ Ena is for micro-businesses and the self-employed who bank with Bank of Cyprus. 
 | Step | What Ena does | API | Code | Runs on today |
 |---|---|---|---|---|
 | Supplier invoice | Reads the invoices sent to the business and marks one paid | Jinius (`GET /v3/invoices/payable`) | [ena/connectors/jinius.py](ena/connectors/jinius.py) | The Jinius integration environment with credentials; without them, or when Jinius can't be reached, the saved responses in [fixtures/jinius/](fixtures/jinius/) |
-| Payment | Pays at or below the owner's limit, asks for approval above it, and writes a receipt for every payment | bocAPI payments (sign, initiate, consent, execute to `CPLT`) | The gate [ena/gate.py](ena/gate.py) with [ena/store.py](ena/store.py); the bank calls in [ena/connectors/boc.py](ena/connectors/boc.py) | The gate runs in the tests against a stand-in bank; the bocAPI payment runs on the sandbox by hand with `ena-boc` (below). The two are not wired together yet |
+| Payment | Pays at or below the owner's limit, asks for approval above it, and writes a receipt for every payment | bocAPI payments (sign, initiate, consent, execute to `CPLT`) | The gate [ena/gate.py](ena/gate.py) with [ena/store.py](ena/store.py); the bank calls in [ena/connectors/boc.py](ena/connectors/boc.py), the gate's bocAPI bank in [ena/connectors/boc_bank.py](ena/connectors/boc_bank.py) | A stand-in bank by default; the bocAPI sandbox with `ena-serve --bank boc` (below), where the owner confirms each payment in BoC's own screen |
 | Books | Matches statement lines to paid invoices and to card sales | bocAPI statement; JCC card payments (callback, `getOrderStatusExtended.do`) | [ena/rules/books.py](ena/rules/books.py); the statement call in [ena/connectors/boc.py](ena/connectors/boc.py); the JCC callback `POST /jcc/callback` in [ena/api.py](ena/api.py) with [ena/connectors/jcc.py](ena/connectors/jcc.py), which books a confirmed card payment once | The synthetic month. The JCC callback runs in the tests on the saved sandbox responses in [fixtures/jcc/](fixtures/jcc/); see [docs/jcc-notes.md](docs/jcc-notes.md) for the live sandbox |
 | Cash forecast | Projects 8 weeks of cash and flags the first lean week | bocAPI balance and statement | [ena/rules/forecast.py](ena/rules/forecast.py) | The synthetic month: week 3 (16 November) is lean |
 | Credit offer | Sets money aside for the loan instalment, pre-fills a Digital Business Loan, or offers a short-term advance against a booked event's costs, which the owner accepts on its card and the gate repays from the event's final payment | None: the loan and advance offers are simulated, since the sandbox has no lending API | [ena/rules/reserve.py](ena/rules/reserve.py), [ena/rules/loan.py](ena/rules/loan.py), [ena/rules/events.py](ena/rules/events.py), [ena/advances.py](ena/advances.py) | The forecast's numbers; the synthetic catering events |
@@ -84,9 +84,27 @@ The page talks to the API through the dev server, so `ena-serve` must be running
 
 `web/.npmrc` turns off package install scripts. `npm test` runs the page's tests and `npm run build` type-checks it and builds it into `web/dist/`.
 
+### The demo on the bocAPI sandbox
+
+With `--bank boc` the gate pays through the bocAPI sandbox instead of the stand-in: Approve (or a payment within the limit) initiates the payment in the sandbox and shows a "Confirm in Bank of Cyprus" card. It opens BoC's own screen (test login `999999` / `112233`, OTP `123456`); after the confirmation BoC sends the browser back to Ena's `/boc/consent`, which executes the payment and writes the receipt, labelled "BoC sandbox payment". Every invoice is paid from `BOC_ACCOUNT_ID` to BoC's sample payee, since the synthetic suppliers have no sandbox account. A "Show my Bank of Cyprus sandbox account" chip reads that account's live balance and statement, shown on its own card and never added to the synthetic month's figures. One confirmation waits at a time; Cancel on its card stops waiting.
+
+It needs an active subscription (`ena-boc subscribe` and `activate`, below) and, in `.env`:
+
+```text
+BOC_SUBSCRIPTION_ID=<from ena-boc activate>
+BOC_ACCOUNT_ID=351012345671
+BOC_REDIRECT_URI=http://localhost:5173/boc/consent
+```
+
+Set the same redirect URI on the app in the sandbox portal (My Apps), since BoC sends the browser only to the registered one. `ena-serve --bank boc` refuses to start without these. Then:
+
+```bash
+uv run ena-serve --bank boc
+```
+
 ### On the sandboxes, with credentials
 
-Not needed for the demo. To call the bocAPI sandbox, copy `.env.example` to `.env` and fill in the bocAPI app's client id and secret, then:
+Not needed for the stand-in demo. To call the bocAPI sandbox, copy `.env.example` to `.env` and fill in the bocAPI app's client id and secret, then:
 
 ```bash
 uv run ena-boc token

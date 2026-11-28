@@ -1,7 +1,20 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App } from "./App";
-import { ACCEPTED, ADVANCE, APPROVAL, DECLINED, FORECAST, LOAN, RECEIPT, sse, streaming } from "./fixtures";
+import { App, LIVE_SUGGESTION } from "./App";
+import {
+  ACCEPTED,
+  ACCOUNT,
+  ADVANCE,
+  APPROVAL,
+  CONSENT,
+  DECLINED,
+  FORECAST,
+  LOAN,
+  RECEIPT,
+  SANDBOX_RECEIPT,
+  sse,
+  streaming,
+} from "./fixtures";
 
 afterEach(cleanup);
 
@@ -135,6 +148,66 @@ describe("App", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "What's my balance?" }).hasAttribute("disabled")).toBe(false),
     );
+  });
+
+  it("labels payments as the Bank of Cyprus sandbox's when the API says the bank is live", async () => {
+    render(<App fetcher={answering({ "/bank": () => Response.json({ live: true }) })} />);
+    await waitFor(() => expect(screen.getByRole("note").textContent).toMatch(/Bank of Cyprus sandbox/));
+    expect(screen.getByRole("button", { name: LIVE_SUGGESTION })).toBeTruthy();
+  });
+
+  it("after Approve, opens the bank's screen and shows the receipt once the bank answers", async () => {
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
+    let settled = false;
+    const fetcher = answering({
+      "/bank": () => Response.json({ live: true }),
+      "/chat": () => streaming(sse(APPROVAL, { kind: "done", text: "x", unconfirmed: false, cached: false })),
+      "/approvals/approval-syn-inv-0002/approve": () => Response.json(CONSENT),
+      "/consents/consent-syn-inv-0002": () => Response.json(settled ? SANDBOX_RECEIPT : CONSENT),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.click(screen.getByRole("button", { name: "Pay the flour invoice" }));
+    const approval = await screen.findByRole("article", { name: "Approval" });
+    fireEvent.click(within(approval).getByRole("button", { name: "Approve" }));
+
+    const consent = await within(approval).findByRole("article", { name: "Bank confirmation" });
+    expect(within(approval).getByText("You approved")).toBeTruthy();
+    expect(within(consent).queryByRole("article", { name: "Receipt" })).toBeNull();
+    fireEvent.click(within(consent).getByRole("button", { name: "Confirm in Bank of Cyprus" }));
+    expect(opened).toHaveBeenCalledWith(expect.stringContaining("paymentid=pay-1"), "_blank");
+    expect(within(consent).getByText("Waiting for the bank's confirmation…")).toBeTruthy();
+
+    settled = true;
+    const receipt = await within(consent).findByRole("article", { name: "Receipt" }, { timeout: 4000 });
+    expect(within(receipt).getByText("BoC sandbox payment")).toBeTruthy();
+    expect(within(consent).queryByRole("button", { name: "Cancel" })).toBeNull();
+    opened.mockRestore();
+  });
+
+  it("cancels a waiting bank confirmation", async () => {
+    const fetcher = answering({
+      "/chat": () => streaming(sse(CONSENT, { kind: "done", text: "x", unconfirmed: false, cached: false })),
+      "/consents/consent-syn-inv-0002/cancel": () => Response.json(DECLINED),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.click(screen.getByRole("button", { name: "Pay the flour invoice" }));
+    const consent = await screen.findByRole("article", { name: "Bank confirmation" });
+    fireEvent.click(within(consent).getByRole("button", { name: "Cancel" }));
+    expect(await within(consent).findByRole("article", { name: "Receipt" })).toBeTruthy();
+    expect(fetcher).toHaveBeenCalledWith("/consents/consent-syn-inv-0002/cancel", { method: "POST" });
+  });
+
+  it("shows the live sandbox account apart from the bakery's numbers", async () => {
+    const fetcher = answering({
+      "/chat": () => streaming(sse(ACCOUNT, { kind: "done", text: "x", unconfirmed: false, cached: false })),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.click(screen.getByRole("button", { name: "What's my balance?" }));
+    const account = await screen.findByRole("article", { name: "Bank account" });
+    expect(within(account).getByText("live, BoC sandbox")).toBeTruthy();
+    expect(within(account).getByText("€8,250.50")).toBeTruthy();
+    expect(within(account).getByText(/not the bakery's/)).toBeTruthy();
+    expect(within(account).getByText("+€120.25")).toBeTruthy();
   });
 
   it("says so when the API can't be reached", async () => {

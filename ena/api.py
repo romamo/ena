@@ -12,6 +12,17 @@ an approval card. They call the gate's approval path directly, never the agent, 
 answer with the receipt card; an unknown or already decided approval is refused with
 409. No tool can reach these: approval comes only from the owner (§5).
 
+`GET /bank` says which bank the gate pays through: `{"live": false}` for the stand-in,
+true for the bocAPI sandbox, so the page labels its payments.
+
+With the bocAPI sandbox each payment the gate makes waits for the owner's confirmation in
+BoC's own screen (`ena/gate.py`). `GET /boc/consent` is where that screen sends the
+browser back: with `code` it executes the payment and answers a page with the receipt,
+with `error` it writes a failed receipt. `GET /consents/{id}` answers the consent card
+while it waits and the receipt card once it is settled (the chat page polls it), and
+`POST /consents/{id}/cancel` stops waiting, with a failed receipt. A consent already
+settled, or none open, is refused with 409.
+
 `POST /offers/{id}/accept` and `POST /offers/{id}/decline` are the owner's tap on an
 event advance's offer card (`ena/advances.py`). They answer with the receipt card; an
 unknown or already decided offer, or a second accepted advance for an event, is refused
@@ -37,11 +48,13 @@ The callback secret never appears in an answer.
 
 from __future__ import annotations
 
+import html
 from collections.abc import AsyncIterator
 from typing import Annotated, Literal
 from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel, ConfigDict, SecretStr, StringConstraints, ValidationError
 
@@ -58,7 +71,7 @@ from ena.connectors.jcc import (
     verify_checksum,
 )
 from ena.dashboard import Credit, Dashboard, ForecastView, Overview, Receipts
-from ena.gate import Gate, GateError
+from ena.gate import Gate, GateError, PaymentResult
 from ena.mcp_server import ToolError
 from ena.store import Store
 
@@ -73,6 +86,13 @@ class CallbackAnswer(BaseModel):
 
     result: Literal["booked", "already_booked", "ignored"]
     jcc_order_id: str
+
+
+class BankMode(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    live: bool
+    """True when the gate pays through the bocAPI sandbox, False for the stand-in."""
 
 
 class ChatRequest(BaseModel):
@@ -128,6 +148,43 @@ def create_app(
                 return card_event(owner_gate.decline(approval_id))
             except GateError as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
+
+        @app.get("/bank")
+        async def bank() -> BankMode:
+            return BankMode(live=not owner_gate.simulated)
+
+        @app.get("/consents/{consent_id}")
+        async def consent(consent_id: str) -> CardEvent:
+            try:
+                return card_event(owner_gate.consent(consent_id))
+            except GateError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+
+        @app.post("/consents/{consent_id}/cancel")
+        async def cancel_consent(consent_id: str) -> CardEvent:
+            try:
+                return card_event(owner_gate.cancel(consent_id))
+            except GateError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+        @app.get("/boc/consent", response_class=HTMLResponse)
+        async def boc_consent(
+            code: str | None = None,
+            error: str | None = None,
+            error_description: str | None = None,
+        ) -> HTMLResponse:
+            try:
+                if error is not None:
+                    receipt = owner_gate.refuse(f"{error} {error_description or ''}".strip())
+                elif code:
+                    receipt = owner_gate.confirm(code)
+                else:
+                    return _page(400, "No confirmation", "The bank sent no code back.")
+            except GateError as refused:
+                return _page(409, "Nothing to confirm", str(refused))
+            paid = receipt.result == PaymentResult.PAID
+            title = "Paid" if paid else "Not paid"
+            return _page(200, title, receipt.explanation, close=paid)
 
     if dashboard is not None:
         board = dashboard
@@ -211,6 +268,21 @@ def create_app(
         return CallbackAnswer(result="booked", jcc_order_id=order)
 
     return app
+
+
+def _page(status: int, title: str, message: str, *, close: bool = False) -> HTMLResponse:
+    """The small page the owner's browser lands on after the bank's screen."""
+    script = "<script>setTimeout(() => window.close(), 1500)</script>" if close else ""
+    body = (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>Ena: {html.escape(title)}</title>"
+        "<style>body{font:16px system-ui,sans-serif;margin:2rem 1rem;max-width:32rem}</style>"
+        f"</head><body><h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>"
+        "<p>Go back to Ena: the chat shows the receipt.</p>"
+        f"{script}</body></html>"
+    )
+    return HTMLResponse(body, status_code=status)
 
 
 async def _form_fields(request: Request) -> dict[str, str]:

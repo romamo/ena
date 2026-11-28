@@ -11,6 +11,10 @@ repeated callback can never book a sale twice.
 An event advance offer is kept with its event's id, inserted offered once per offer id,
 and decided once (accepted or declined) in the same transaction as its receipt; an event
 has at most one accepted advance.
+A bank consent (a payment the bank holds until the owner confirms it there) is kept with
+the bank's payment id and the reason the gate paid; it is open until its receipt is
+written, closed in the same transaction, and at most one is open at a time, since the
+bank's redirect after a confirmation names no payment (docs/boc-notes.md §4).
 """
 
 from __future__ import annotations
@@ -20,7 +24,15 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from ena.models import AdvanceStatus, ApprovalRequest, ApprovalStatus, CardSale, Offer, Receipt
+from ena.models import (
+    AdvanceStatus,
+    ApprovalRequest,
+    ApprovalStatus,
+    BankConsent,
+    CardSale,
+    Offer,
+    Receipt,
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS receipts (
@@ -50,6 +62,15 @@ CREATE TABLE IF NOT EXISTS advances (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_accepted_advance_per_event
     ON advances (event_id) WHERE status = 'accepted';
+CREATE TABLE IF NOT EXISTS consents (
+    id TEXT PRIMARY KEY,
+    ref TEXT NOT NULL UNIQUE,
+    payment_id TEXT NOT NULL,
+    why TEXT NOT NULL,
+    open INTEGER NOT NULL,
+    body TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_consent ON consents (open) WHERE open = 1;
 CREATE TABLE IF NOT EXISTS card_sales (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
@@ -78,6 +99,15 @@ class StoredAdvance:
     offer: Offer
     event_id: str
     status: AdvanceStatus
+
+
+@dataclass(frozen=True)
+class StoredConsent:
+    """A bank consent, the bank's id for its payment, and why the gate paid."""
+
+    consent: BankConsent
+    payment_id: str
+    why: str
 
 
 class Store:
@@ -186,6 +216,45 @@ class Store:
                 (receipt.id, receipt.ref, receipt.model_dump_json()),
             )
 
+    # Bank consents
+
+    def add_consent(self, consent: BankConsent, payment_id: str, why: str) -> None:
+        """Keep an open consent; fails when one is open already or its ref has one."""
+        if not payment_id:
+            raise StoreError(f"consent {consent.id} needs the bank's payment id")
+        with self._db:
+            self._db.execute(
+                "INSERT INTO consents (id, ref, payment_id, why, open, body)"
+                " VALUES (?, ?, ?, ?, 1, ?)",
+                (consent.id, consent.ref, payment_id, why, consent.model_dump_json()),
+            )
+
+    def consent(self, consent_id: str) -> StoredConsent | None:
+        row = self._db.execute(
+            "SELECT body, payment_id, why FROM consents WHERE id = ?", (consent_id,)
+        ).fetchone()
+        return None if row is None else _stored_consent(row)
+
+    def open_consent(self) -> StoredConsent | None:
+        """The one consent waiting for the owner's confirmation in the bank, if any."""
+        row = self._db.execute(
+            "SELECT body, payment_id, why FROM consents WHERE open = 1"
+        ).fetchone()
+        return None if row is None else _stored_consent(row)
+
+    def close_consent(self, consent_id: str, receipt: Receipt) -> None:
+        """Close an open consent and write its receipt, in one transaction."""
+        with self._db:
+            cursor = self._db.execute(
+                "UPDATE consents SET open = 0 WHERE id = ? AND open = 1", (consent_id,)
+            )
+            if cursor.rowcount != 1:
+                raise StoreError(f"consent {consent_id} is not open")
+            self._db.execute(
+                "INSERT INTO receipts (id, ref, body) VALUES (?, ?, ?)",
+                (receipt.id, receipt.ref, receipt.model_dump_json()),
+            )
+
     # Approval requests
 
     def add_approval(self, request: ApprovalRequest, ref: str) -> None:
@@ -258,6 +327,11 @@ class Store:
         )
         if cursor.rowcount != 1:
             raise StoreError(f"approval {decided.id} is not pending")
+
+
+def _stored_consent(row: tuple[str, str, str]) -> StoredConsent:
+    body, payment_id, why = row
+    return StoredConsent(BankConsent.model_validate_json(body), payment_id, why)
 
 
 def _stored_advance(row: tuple[str, str, str]) -> StoredAdvance:

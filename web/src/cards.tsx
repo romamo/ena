@@ -1,10 +1,14 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import {
   ApiError,
+  cancelConsent,
+  consentState,
   decide,
   takeOffer,
+  type AccountCard,
   type ApprovalCard,
   type CardEvent,
+  type ConsentCard,
   type ForecastCard,
   type OfferCard,
   type ReceiptCard,
@@ -19,9 +23,11 @@ export type BoardTab = "overview" | "receipts" | "forecast" | "credit";
 
 const CARD_TAB: Record<CardEvent["card_kind"], BoardTab> = {
   approval: "overview",
+  consent: "overview",
   receipt: "receipts",
   forecast: "forecast",
   offer: "credit",
+  account: "overview",
 };
 
 /** Opens the dashboard on a tab; given only in the chat, so a card there links to it. */
@@ -40,10 +46,17 @@ function BoardLink({ kind }: { kind: CardEvent["card_kind"] }) {
   );
 }
 
+/** How often a consent card asks whether the bank's confirmation came back. */
+export const POLL_MS = 1500;
+
 export function Card({ event }: { event: CardEvent }) {
   switch (event.card_kind) {
     case "approval":
       return <Approval card={event.card} />;
+    case "consent":
+      return <Consent card={event.card} />;
+    case "account":
+      return <Account card={event.card} />;
     case "receipt":
       return <Receipt card={event.card} />;
     case "forecast":
@@ -123,6 +136,7 @@ function approvalTitle(card: ApprovalCard, tap: Tap): string {
   if (tap.state === "decided" && tap.receipt.card_kind === "receipt") {
     return tap.receipt.card.result === "declined" ? "You declined" : "You approved";
   }
+  if (tap.state === "decided" && tap.receipt.card_kind === "consent") return "You approved";
   return card.status === "pending" ? "Needs your approval" : `Already ${card.status}`;
 }
 
@@ -131,7 +145,7 @@ function Receipt({ card }: { card: ReceiptCard }) {
     <article className={`card receipt result-${card.result}`} aria-label="Receipt">
       <header>
         <h3>Receipt · {card.result}</h3>
-        <Label>{card.simulated ? "simulated payment" : "synthetic"}</Label>
+        <Label>{receiptLabel(card)}</Label>
       </header>
       <p className="amount">{euro(card.amount_cents)}</p>
       <p>{card.action}</p>
@@ -140,6 +154,121 @@ function Receipt({ card }: { card: ReceiptCard }) {
         By {card.actor === "ena" ? "Ena" : "you"}, {dayTime(card.at)} · {card.id}
       </p>
       <BoardLink kind="receipt" />
+    </article>
+  );
+}
+
+function receiptLabel(card: ReceiptCard): string {
+  if (card.sandbox) return "BoC sandbox payment";
+  return card.simulated ? "simulated payment" : "synthetic";
+}
+
+type Confirm =
+  | { state: "open" }
+  | { state: "waiting" }
+  | { state: "settled"; receipt: CardEvent }
+  | { state: "failed"; message: string };
+
+function Consent({ card }: { card: ConsentCard }) {
+  const fetcher = useContext(FetchContext);
+  const [confirm, setConfirm] = useState<Confirm>({ state: "open" });
+
+  useEffect(() => {
+    if (confirm.state !== "waiting") return;
+    const timer = setInterval(() => {
+      consentState(card.id, fetcher).then(
+        (answer) => {
+          if (answer.card_kind === "receipt") setConfirm({ state: "settled", receipt: answer });
+        },
+        (error: unknown) => {
+          const message = error instanceof ApiError ? error.message : String(error);
+          setConfirm({ state: "failed", message });
+        },
+      );
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [confirm.state, card.id, fetcher]);
+
+  function open() {
+    window.open(card.consent_url, "_blank");
+    setConfirm({ state: "waiting" });
+  }
+
+  async function cancel() {
+    try {
+      setConfirm({ state: "settled", receipt: await cancelConsent(card.id, fetcher) });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : String(error);
+      setConfirm({ state: "failed", message });
+    }
+  }
+
+  return (
+    <article className="card consent" aria-label="Bank confirmation">
+      <header>
+        <h3>{confirm.state === "settled" ? "Bank answered" : "Confirm in Bank of Cyprus"}</h3>
+        <Label>BoC sandbox</Label>
+      </header>
+      <p className="amount">{euro(card.amount_cents)}</p>
+      <p>{card.action}</p>
+      <p className="muted">
+        {card.actor === "ena" ? "Within your limit" : "You approved it"}; the bank asks you to
+        confirm it in its own screen. Nothing is paid until you do.
+      </p>
+      {confirm.state === "open" || confirm.state === "waiting" ? (
+        <div className="actions">
+          <button type="button" className="primary" onClick={open}>
+            {confirm.state === "waiting" ? "Open Bank of Cyprus again" : "Confirm in Bank of Cyprus"}
+          </button>
+          <button type="button" onClick={() => void cancel()}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
+      {confirm.state === "waiting" ? (
+        <p className="muted small">Waiting for the bank's confirmation…</p>
+      ) : null}
+      {confirm.state === "failed" ? (
+        <p className="error" role="alert">
+          {confirm.message}
+        </p>
+      ) : null}
+      {confirm.state === "settled" ? <Card event={confirm.receipt} /> : null}
+    </article>
+  );
+}
+
+function Account({ card }: { card: AccountCard }) {
+  return (
+    <article className="card account" aria-label="Bank account">
+      <header>
+        <h3>Bank of Cyprus sandbox account</h3>
+        <Label>live, BoC sandbox</Label>
+      </header>
+      <p className="amount">
+        {card.available_cents === null ? "—" : euro(card.available_cents)}
+        <span className="muted small"> available</span>
+      </p>
+      <p className="muted small">
+        {card.iban ?? card.account_id} · a sample customer's account, not the bakery's · read{" "}
+        {dayTime(card.read_at)}
+      </p>
+      {card.lines.length > 0 ? (
+        <ol className="lines">
+          {card.lines.map((line) => (
+            <li key={line.id}>
+              <span>{day(line.date)}</span>
+              <span>{line.description || "—"}</span>
+              <span>
+                {line.direction === "out" ? "−" : line.direction === "in" ? "+" : ""}
+                {euro(line.amount_cents)}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="muted small">No statement lines.</p>
+      )}
     </article>
   );
 }
