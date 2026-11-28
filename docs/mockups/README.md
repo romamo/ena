@@ -14,7 +14,7 @@ The owner's side of Ena is one chat at phone width; approvals, receipts, the for
 
 ## Screenshots of the running app
 
-The same screens in the chat page as it runs today (`uv run ena-serve` with the synthetic month as of 16 November, and [web/](../../web/)), at 390 px phone width, with Ena's replies from the model. Every card comes from Ena's tools, the gate and the stand-in bank; the approval's receipt is a simulated payment, and no money moved. Taken on 28 November 2026, in one chat session, the flour invoice approved last. The model's replies still mix up the demo's day with the real date: they call the data stale since 16 November and the flour invoice past due, and the reserve reply carries the page's "unconfirmed" note; retake them once the agent is told the business day.
+The same screens in the chat page as it runs today (`uv run ena-serve` with the synthetic month as of 16 November, and [web/](../../web/)), at 390 px phone width, with Ena's replies from the model. Every card comes from Ena's tools, the gate and the stand-in bank; the approval's receipt is a simulated payment, and no money moved. Taken on 28 November 2026, in one chat session with the store in memory, the flour invoice approved last, with the agent told the business's day. The receipt's time is still the real clock's.
 
 | Screenshot | Day of the month | What it shows |
 |---|---|---|
