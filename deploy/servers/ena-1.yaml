@@ -1,0 +1,15 @@
+---
+apiVersion: cloudfall/v1
+kind: Server
+metadata:
+  id: ena-1
+  description: 'Hetzner Cloud cx23 178096211, nbg1: Ena''s hosted demo'
+spec:
+  hostname: ena-1
+  address: 116.203.140.114
+  environment: production
+  baseline: debian-application
+  lifecycle: active
+  ssh:
+    user: root
+    port: 22

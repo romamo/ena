@@ -1,0 +1,14 @@
+[project]
+name = "ena-fleet"
+version = "0"
+description = "Ena's hosted demo: one Hetzner Cloud VM, ena.cloudfall.dev"
+# Below 3.15: ansible-core 2.21 fails at start on 3.15 (as in managed-fleet)
+requires-python = ">=3.14,<3.15"
+# Cloudfall is an installed package: the schema catalog and the Ansible engine
+# ship inside the wheel. Bump this version to move the project to a newer
+# Cloudfall, then run `uv sync`. Add the `mcp` extra (`cloudfall[mcp]`) to run
+# the `cloudfall mcp serve` agent server.
+dependencies = ["cloudfall==0.8.0rc34"]
+
+[tool.uv]
+package = false

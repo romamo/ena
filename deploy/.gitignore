@@ -1,0 +1,7 @@
+# Runtime state: evidence, receipts, rendered inventory, built
+# artifacts, rendered environment files, and the persisted migration plan
+tmp/
+
+# Local environment and tooling
+.venv/
+__pycache__/
