@@ -14,8 +14,8 @@ after its last tool call, sent when the turn ends.
 `Chat` runs one owner message as a turn and yields its events for the SSE stream:
 
 1. A question the reply cache holds is answered from it (`ena/cache.py`)
-2. Otherwise the agent runs; each piece of text it writes is sent as it comes, and the
-   cards the tools produced (approvals, receipts, the forecast, offers) go before it
+2. Otherwise the agent runs; its reply comes when the turn ends (`ClaudeAgent.replies`),
+   and the cards the tools produced (approvals, receipts, the forecast, offers) go before it
 3. No "paid" without a receipt: a piece that says a payment was made, when the gate
    returned no paid receipt for a payment asked earlier in the turn, is marked
    unconfirmed; an old receipt the agent only listed backs only a sentence that cites
@@ -176,7 +176,8 @@ class ClaudeAgent:
                 self._session = message.session_id
                 for piece in held:
                     yield piece
-                held.clear()
+                return
+        raise AgentError("the agent's turn ended without a result")
 
 
 # The receipt rule

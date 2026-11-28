@@ -567,6 +567,11 @@ def test_a_reply_without_tools_and_a_subagents_text() -> None:
     assert pieces == ["I don't know."]
 
 
+def test_a_turn_with_no_result_says_nothing_and_raises() -> None:
+    with pytest.raises(AgentError, match="without a result"):
+        replies(said(TextBlock("Half an answer")))
+
+
 def test_a_failed_turn_says_nothing_and_raises() -> None:
     with pytest.raises(AgentError, match="error_during_execution"):
         replies(said(TextBlock("Half an answer")), result(error=True))
