@@ -81,6 +81,19 @@ land = "act"                        # merge on green CI; the repo has no CI yet,
 release = "act"                     # moot while mode = "off"
 revert = "observe"
 
+# Roman, 2026-11-28: "don't wait for me" for the hackathon weekend. Every zone sits at its
+# floor; direction, scope, rule-departure and unknown can't go below ask, so those still wait
+[decisions]
+veto_hours = 4                      # the hackathon runs in hours, not days
+accepted-spec = "notify"
+security = "notify"
+contract-change = "act"
+contract-addition = "act"
+deploy-step = "act"
+protected = "act"
+interpretation = "act"
+triage-verdict = "act"
+
 # What the gate starts a Claude Code session for; shipmill-setup writes this section with you.
 [agents]
 prompt = "/shipmill:github-issue-triage {repo} triage the new issues"
