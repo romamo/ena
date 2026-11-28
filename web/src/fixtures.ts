@@ -1,0 +1,98 @@
+// Card events as the API sends them for the synthetic month on 16 November (ena/seed.py)
+import type { CardEvent } from "./api";
+
+export const APPROVAL: CardEvent = {
+  kind: "card",
+  card_kind: "approval",
+  card: {
+    id: "approval-syn-inv-0002",
+    action: "Pay Mesaoria Mills (synthetic) invoice syn-inv-0002",
+    amount_cents: 124000,
+    reason: "€1,240.00 is above the €500.00 auto-pay limit",
+    status: "pending",
+    created_at: "2026-11-16T09:00:00Z",
+    decided_at: null,
+  },
+};
+
+export const RECEIPT: CardEvent = {
+  kind: "card",
+  card_kind: "receipt",
+  card: {
+    id: "receipt-syn-inv-0002",
+    at: "2026-11-16T09:05:00Z",
+    actor: "owner",
+    action: "Pay Mesaoria Mills (synthetic) invoice syn-inv-0002",
+    amount_cents: 124000,
+    ref: "syn-inv-0002",
+    result: "paid",
+    explanation: "Approved by the owner; paid €1,240.00, bank status CPLT (simulated: no money moved)",
+    simulated: true,
+  },
+};
+
+export const FORECAST: CardEvent = {
+  kind: "card",
+  card_kind: "forecast",
+  card: {
+    weeks: [
+      { week_start: "2026-11-16", opening_cents: 266919, in_cents: 72050, out_cents: 304000, closing_cents: 34969 },
+      { week_start: "2026-11-23", opening_cents: 34969, in_cents: 72050, out_cents: 40000, closing_cents: 67019 },
+    ],
+    lean_week: "2026-11-16",
+    reason: "The week of 16 Nov 2026 closes at €349.69, below €950.00",
+  },
+};
+
+export const LOAN: CardEvent = {
+  kind: "card",
+  card_kind: "offer",
+  card: {
+    id: "loan-20261116",
+    kind: "loan",
+    amount_cents: 100000,
+    term_days: 730,
+    basis: { gap_cents: 60031, rounded_gap_cents: 100000 },
+    simulated: true,
+  },
+};
+
+export const DECLINED: CardEvent = {
+  kind: "card",
+  card_kind: "receipt",
+  card: {
+    id: "receipt-syn-inv-0002",
+    at: "2026-11-16T09:05:00Z",
+    actor: "owner",
+    action: "Pay Mesaoria Mills (synthetic) invoice syn-inv-0002",
+    amount_cents: 124000,
+    ref: "syn-inv-0002",
+    result: "declined",
+    explanation: "Declined by the owner; nothing paid",
+    simulated: false,
+  },
+};
+
+/** An SSE body as `POST /chat` streams it: one event per block, named by its kind. */
+export function sse(...events: object[]): string {
+  return events
+    .map((event) => `event: ${(event as { kind: string }).kind}\r\ndata: ${JSON.stringify(event)}\r\n\r\n`)
+    .join("");
+}
+
+/** A fetch that answers `/chat` with `body` in chunks of `size` characters. */
+export function streaming(body: string, size = 7): Response {
+  const encoder = new TextEncoder();
+  let offset = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= body.length) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(encoder.encode(body.slice(offset, offset + size)));
+      offset += size;
+    },
+  });
+  return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+}

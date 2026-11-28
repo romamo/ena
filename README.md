@@ -20,7 +20,7 @@ Ena is for micro-businesses and the self-employed who bank with Bank of Cyprus. 
 
 The synthetic month ([ena/seed.py](ena/seed.py)) is a bakery's November 2026 built from a fixed seed: a €180 dairy invoice under the €500 limit, a €1,240 flour invoice above it, card sales six days a week, the rent on 20 November and the loan instalment on 25 November. [ena/replay.py](ena/replay.py) plays it as a time-ordered stream of events.
 
-Coming next: the chat agent that takes the replayed events through the rules and the gate and explains each step to the owner, and the chat demo on top of it. The run steps for that demo land with it.
+The owner sees all of it in one chat page ([web/](web/)): Ena's replies stream in with the approval, receipt, forecast and offer cards, and the owner approves or declines a payment above the limit with one tap.
 
 ## Run the demo
 
@@ -69,6 +69,20 @@ Then start the API on http://127.0.0.1:8000 (the chat, the owner's approve and d
 ```bash
 uv run ena-serve
 ```
+
+### The chat page
+
+In a second terminal, with [Node.js](https://nodejs.org) 22 or newer, install the page's packages from the lockfile and start it on http://localhost:5173:
+
+```bash
+cd web
+npm ci
+npm run dev
+```
+
+The page talks to the API through the dev server, so `ena-serve` must be running on port 8000 (set `ENA_API` to point the dev server elsewhere). Open http://localhost:5173 on a phone-sized window and tap a suggested question: "Pay the flour invoice" shows the €1,240 approval card, and Approve settles it through the stand-in bank and shows the receipt. A banner and a label on each card mark the data as synthetic, the payments as simulated and the loan as an offer, simulated. Without an Anthropic credential in `ena-serve`'s shell, each question answers with the error that names the missing key.
+
+`web/.npmrc` turns off package install scripts. `npm test` runs the page's tests and `npm run build` type-checks it and builds it into `web/dist/`.
 
 ### On the sandboxes, with credentials
 
