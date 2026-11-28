@@ -23,6 +23,7 @@ Turns run one at a time. The agent never approves or declines: that is the owner
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import re
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
@@ -90,6 +91,16 @@ pay_invoice, and only when the owner asks or the invoice is due.
 """
 
 
+def system_prompt(day: dt.date) -> str:
+    """The answer rules plus the business's current day, which the demo sets, not the clock."""
+    return (
+        f"{SYSTEM_PROMPT}\n"
+        f"Today is {day:%A} {day.day} {day:%B %Y}: the business's day in this demo. Date every "
+        "answer from it (what is due, past due, recent or ahead) and ignore any other date, "
+        "such as the real one or a receipt's time. The data is current as of today, not stale.\n"
+    )
+
+
 class AgentSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ENA_", env_file=".env", extra="ignore")
 
@@ -111,15 +122,16 @@ class AgentRunner(Protocol):
 class ClaudeAgent:
     """Claude through the Claude Agent SDK, with only Ena's MCP tools."""
 
-    def __init__(self, settings: AgentSettings, server: McpSdkServerConfig) -> None:
+    def __init__(self, settings: AgentSettings, server: McpSdkServerConfig, today: Today) -> None:
         self._settings = settings
         self._server = server
+        self._today = today
         self._session: str | None = None
 
     def options(self) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             model=self._settings.model,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=system_prompt(self._today()),
             mcp_servers={SERVER_NAME: self._server},
             strict_mcp_config=True,
             tools=[],
