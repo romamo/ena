@@ -1,0 +1,118 @@
+[
+  {
+    "id": "balance",
+    "en": "What's my balance?",
+    "el": "Ποιο είναι το υπόλοιπό μου;",
+    "day": 20,
+    "paid_before": ["syn-inv-0001", "syn-inv-0002"],
+    "tools": [{"tool": "get_balance", "arguments": {}}],
+    "figures": ["€90.88"],
+    "cards": [],
+    "dont_know": false
+  },
+  {
+    "id": "rent-friday",
+    "en": "Can I pay rent on Friday?",
+    "el": "Μπορώ να πληρώσω το ενοίκιο την Παρασκευή;",
+    "day": 16,
+    "paid_before": [],
+    "tools": [
+      {"tool": "get_balance", "arguments": {}},
+      {"tool": "get_forecast", "arguments": {}}
+    ],
+    "figures": ["€2,849.19", "€349.69"],
+    "cards": ["forecast"],
+    "dont_know": false
+  },
+  {
+    "id": "lean-week",
+    "en": "Will I be short of cash this month?",
+    "el": "Θα μου λείψουν χρήματα αυτόν τον μήνα;",
+    "day": 16,
+    "paid_before": [],
+    "tools": [{"tool": "get_forecast", "arguments": {}}],
+    "figures": ["€349.69", "€400.00"],
+    "cards": ["forecast"],
+    "dont_know": false
+  },
+  {
+    "id": "reserve",
+    "en": "Should I set money aside for the loan instalment?",
+    "el": "Να βάλω στην άκρη χρήματα για τη δόση του δανείου;",
+    "day": 16,
+    "paid_before": [],
+    "tools": [{"tool": "propose_reserve", "arguments": {}}],
+    "figures": ["€400.00"],
+    "cards": ["offer"],
+    "dont_know": false
+  },
+  {
+    "id": "loan",
+    "en": "Can I get a loan to cover the gap?",
+    "el": "Μπορώ να πάρω δάνειο για να καλύψω το κενό;",
+    "day": 16,
+    "paid_before": [],
+    "tools": [{"tool": "propose_loan", "arguments": {}}],
+    "figures": ["€1,000.00"],
+    "cards": ["offer"],
+    "dont_know": false
+  },
+  {
+    "id": "unpaid-invoices",
+    "en": "Which invoices are unpaid?",
+    "el": "Ποια τιμολόγια είναι απλήρωτα;",
+    "day": 4,
+    "paid_before": [],
+    "tools": [{"tool": "list_unpaid_invoices", "arguments": {}}],
+    "figures": ["€180.00", "€1,240.00", "€1,420.00"],
+    "cards": [],
+    "dont_know": false
+  },
+  {
+    "id": "pay-flour",
+    "en": "Pay the flour invoice",
+    "el": "Πλήρωσε το τιμολόγιο του αλευριού",
+    "day": 4,
+    "paid_before": [],
+    "tools": [
+      {"tool": "list_unpaid_invoices", "arguments": {}},
+      {"tool": "pay_invoice", "arguments": {"invoice_id": "syn-inv-0002"}}
+    ],
+    "figures": ["€1,240.00", "€500.00"],
+    "cards": ["approval"],
+    "dont_know": false
+  },
+  {
+    "id": "unmatched-payments",
+    "en": "Which payments this month match no invoice?",
+    "el": "Ποιες πληρωμές αυτού του μήνα δεν αντιστοιχούν σε τιμολόγιο;",
+    "day": 30,
+    "paid_before": [],
+    "tools": [{"tool": "get_books", "arguments": {"from": "2026-11-01", "to": "2026-11-30"}}],
+    "figures": ["€1,800.00", "€400.00"],
+    "cards": [],
+    "dont_know": false
+  },
+  {
+    "id": "receipts",
+    "en": "What did you pay this month?",
+    "el": "Τι πλήρωσες αυτόν τον μήνα;",
+    "day": 30,
+    "paid_before": ["syn-inv-0001", "syn-inv-0002"],
+    "tools": [{"tool": "list_receipts", "arguments": {"limit": 10}}],
+    "figures": ["€1,240.00", "€180.00"],
+    "cards": [],
+    "dont_know": false
+  },
+  {
+    "id": "unknown-vat",
+    "en": "How much VAT do I owe this quarter?",
+    "el": "Πόσο ΦΠΑ χρωστάω αυτό το τρίμηνο;",
+    "day": 30,
+    "paid_before": [],
+    "tools": [],
+    "figures": [],
+    "cards": [],
+    "dont_know": true
+  }
+]

@@ -64,6 +64,12 @@ Mon 30 Nov 12:00  card_sale_received  syn-sale-20261130-3        35.42
 184 events, 1 to 30 November 2026
 ```
 
+Then start the API on http://127.0.0.1:8000 (the chat, the owner's approve and decline, the JCC callback), with the synthetic month as of 16 November and the store in `tmp/ena.db`; `uv run ena-serve --help` lists the flags. Its payments are simulated: a stand-in bank completes each one, so a receipt says paid though no money moved. Without `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`) in the shell `/chat` answers with an error event, and without the JCC settings in `.env` the callback refuses every call:
+
+```bash
+uv run ena-serve
+```
+
 ### On the sandboxes, with credentials
 
 Not needed for the demo. To call the bocAPI sandbox, copy `.env.example` to `.env` and fill in the bocAPI app's client id and secret, then:
@@ -90,6 +96,7 @@ Members: Roman, Youssef and Keith. Keith's area is still to agree.
 - [docs/product.md](docs/product.md): the mission, goals, non-goals and quality bar
 - [docs/plan.md](docs/plan.md): the team plan: decisions, roles, weekend, pitch hook, the one number, open tasks
 - [docs/build-plan.md](docs/build-plan.md): proposed architecture, data model, tools, rules, tasks and timeline
+- [docs/business-model-canvas.md](docs/business-model-canvas.md): the business model canvas: who pays, the channels, what Bank of Cyprus gains
 - [docs/mockups/](docs/mockups/README.md): mockups of the owner's screens: the approval above the limit, receipts, the cash forecast, the credit offer and the month end
 - [docs/hackathon.md](docs/hackathon.md): the hackathon reference: APIs, links, rules, how the jury scores
 - [docs/interviews/](docs/interviews/guide.md): the customer interview guide (English, Russian, Greek)

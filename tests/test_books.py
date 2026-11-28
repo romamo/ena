@@ -116,6 +116,20 @@ def test_payment_within_7_days_of_due_date(offset: int, matched: bool) -> None:
     assert bool(match_invoices([inv], [pay]).matches) is matched
 
 
+@pytest.mark.parametrize(
+    ("offset", "matched"), [(-31, False), (-30, True), (-8, True), (7, True), (8, False)]
+)
+def test_a_payment_with_the_invoice_number_may_come_from_the_issue_date(
+    offset: int, matched: bool
+) -> None:
+    inv = invoice("inv-1", jinius_id="INV-1")  # issued 30 days before it is due
+    pay = tx("t1", -12_000, days(offset), counterparty="Other", reference="Payment INV-1")
+    result = match_invoices([inv], [pay])
+    assert bool(result.matches) is matched
+    if matched:
+        assert result.matches[0].basis is MatchBasis.REFERENCE
+
+
 def test_day_7_payment_matches_and_day_8_payment_stays_unmatched() -> None:
     inv = invoice("inv-1")
     day_8 = tx("t8", -12_000, days(8), counterparty="Flour Mills Ltd")

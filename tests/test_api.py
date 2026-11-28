@@ -178,6 +178,43 @@ def test_paid_without_a_receipt_is_marked_unconfirmed(api: Api) -> None:
     assert api.bank.calls == []
 
 
+def test_a_listed_old_receipt_does_not_confirm_a_new_payment_claim(api: Api) -> None:
+    paid_now = api.chat(
+        "Pay the dairy invoice",
+        Call("list_receipts", {"limit": 5}),
+        Call("pay_invoice", {"invoice_id": DAIRY.id}),
+        Say("Paid Kyrenia Dairy (synthetic) €180.00."),
+    )
+    assert paid_now[-1][1]["unconfirmed"] is False
+
+    events = api.chat(
+        "Did you pay the flour?",
+        Call("list_receipts", {"limit": 5}),
+        Say("Yes, I paid the flour invoice."),
+    )
+    assert kinds(events) == ["text", "done"]
+    assert events[0][1]["text"] == UNCONFIRMED + "Yes, I paid the flour invoice."
+    assert events[-1][1]["unconfirmed"] is True
+    assert api.bank.calls == [DAIRY.id]
+
+
+def test_a_past_payment_cited_by_its_listed_receipt_passes(api: Api) -> None:
+    api.chat("Pay the dairy invoice", Call("pay_invoice", {"invoice_id": DAIRY.id}), Say("Paid."))
+    cited = f"The dairy invoice was paid on 16 Nov, receipt receipt-{DAIRY.id}."
+    events = api.chat("Was the dairy paid?", Call("list_receipts", {"limit": 5}), Say(cited))
+    assert events[0][1]["text"] == cited
+    assert events[-1][1]["unconfirmed"] is False
+
+    # A citation backs its own sentence only, not a new claim beside it
+    both = cited + " I paid the flour invoice too."
+    events = api.chat("And the flour?", Call("list_receipts", {"limit": 5}), Say(both))
+    assert events[-1][1]["unconfirmed"] is True
+    # Without list_receipts this turn, the id alone confirms nothing
+    events = api.chat("Was the dairy paid, really?", Say(cited))
+    assert events[-1][1]["unconfirmed"] is True
+    assert api.bank.calls == [DAIRY.id]
+
+
 def test_a_payment_above_the_limit_is_an_approval_card_until_the_owner_taps(api: Api) -> None:
     events = api.chat(
         "Pay the flour invoice",
@@ -280,6 +317,10 @@ def test_a_paid_receipt_confirms_a_claim() -> None:
     assert confirm("Paid.", [receipt]) == ("Paid.", False)
     assert confirm("Paid.", [failed]) == (UNCONFIRMED + "Paid.", True)
     assert confirm("Paid.", []) == (UNCONFIRMED + "Paid.", True)
+    # A read receipt backs only a sentence citing its id, and only when it was paid
+    assert confirm("Paid, receipt-x.", [], [receipt]) == ("Paid, receipt-x.", False)
+    assert confirm("Paid.", [], [receipt]) == (UNCONFIRMED + "Paid.", True)
+    assert confirm("Paid, receipt-x.", [], [failed]) == (UNCONFIRMED + "Paid, receipt-x.", True)
 
 
 # The reply cache
