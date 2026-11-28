@@ -24,6 +24,8 @@ export type ReceiptCard = {
   ref: string;
   result: string;
   explanation: string;
+  /** A payment the stand-in bank completed: no money moved (#69). */
+  simulated: boolean;
 };
 
 export type ForecastWeek = {

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { APPROVAL, FORECAST, LOAN, RECEIPT, sse, streaming } from "./fixtures";
+import { APPROVAL, DECLINED, FORECAST, LOAN, RECEIPT, sse, streaming } from "./fixtures";
 
 afterEach(cleanup);
 
@@ -72,6 +72,21 @@ describe("App", () => {
     expect(within(approval).queryByRole("button", { name: "Approve" })).toBeNull();
     expect(within(approval).getByText("You approved")).toBeTruthy();
     expect(fetcher).toHaveBeenCalledWith("/approvals/approval-syn-inv-0002/approve", { method: "POST" });
+  });
+
+  it("labels a receipt simulated only when the API says so", async () => {
+    const fetcher = answering({
+      "/chat": () => streaming(sse(APPROVAL, { kind: "done", text: "x", unconfirmed: false, cached: false })),
+      "/approvals/approval-syn-inv-0002/decline": () => Response.json(DECLINED),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.click(screen.getByRole("button", { name: "Pay the flour invoice" }));
+    const approval = await screen.findByRole("article", { name: "Approval" });
+    fireEvent.click(within(approval).getByRole("button", { name: "Decline" }));
+    const receipt = await within(approval).findByRole("article", { name: "Receipt" });
+    expect(within(receipt).getByText("Receipt · declined")).toBeTruthy();
+    expect(within(receipt).queryByText("simulated payment")).toBeNull();
+    expect(within(approval).getByText("You declined")).toBeTruthy();
   });
 
   it("shows the API's reason when a tap is refused and keeps the buttons", async () => {
