@@ -17,7 +17,7 @@ Cloudfall is pinned to 0.8.0rc34 for its frontend build steps (`npm ci` and `npm
 
 ## Deploy a new release
 
-Needs Node.js 22 or newer and npm on the controller, root SSH to ena-1 with the `roman` key, and `ANTHROPIC_API_KEY` for the server.
+Needs Node.js 22 or newer and npm on the controller, root SSH to ena-1 with the `roman` key, and the repository's `.env` with the Anthropic key and the Jinius client.
 
 ```bash
 uv sync
