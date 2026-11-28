@@ -212,4 +212,35 @@ describe("Dashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Read invoices from Jinius" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Jinius is not configured");
   });
+
+  it("keeps the Jinius answer that arrives after the owner switched tabs", async () => {
+    let answer: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/jinius/invoices") return pending;
+      const route = (ROUTES as Record<string, () => Response>)[String(input)];
+      if (route === undefined) throw new Error(`unexpected request ${String(input)}`);
+      return route();
+    });
+    openDashboard(fetcher);
+    fireEvent.click(screen.getByRole("tab", { name: "Jinius" }));
+    fireEvent.click(screen.getByRole("button", { name: "Read invoices from Jinius" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Receipts" }));
+    answer(Response.json({ source: "fixture", note: "Jinius sandbox offline, showing saved data", invoices: [] }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith("/dashboard/receipts"));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Jinius" }));
+    expect((await screen.findByText(/Saved data · Jinius sandbox offline/)).textContent).toContain("Saved data");
+    expect(screen.getByText("No invoices on Jinius yet.")).toBeTruthy();
+  });
+
+  it("refuses a Jinius answer whose invoice is malformed", async () => {
+    const feed = { source: "live", note: "live", invoices: [{ number: "EFM-1", amount_cents: 12.5 }] };
+    openDashboard(answering({ ...ROUTES, "/jinius/invoices": () => Response.json(feed) }));
+    fireEvent.click(screen.getByRole("tab", { name: "Jinius" }));
+    fireEvent.click(screen.getByRole("button", { name: "Read invoices from Jinius" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("not a Jinius answer");
+  });
 });

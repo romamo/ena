@@ -43,10 +43,11 @@ from typing import Self
 
 import httpx
 import uvicorn
+from dotenv import dotenv_values
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 from ena.advances import Advances
 from ena.agent import AgentError, AgentRunner, AgentSettings, Chat, ClaudeAgent
@@ -117,24 +118,48 @@ class ServeSettings(BaseModel):
         return self
 
 
-class _JccPresence(BaseSettings):
-    """Only whether `JCC_CALLBACK_SECRET` is set: it decides whether JCC is configured."""
+def _only_init(
+    cls: type[BaseSettings],
+    /,
+    settings_cls: type[BaseSettings],
+    init_settings: PydanticBaseSettingsSource,
+    **_others: PydanticBaseSettingsSource,
+) -> tuple[PydanticBaseSettingsSource, ...]:
+    return (init_settings,)
 
-    model_config = SettingsConfigDict(env_prefix="JCC_", env_file=".env", extra="ignore")
 
-    callback_secret: SecretStr = SecretStr("")
+def env_values(prefix: str, env_file: Path | None, environ: Mapping[str, str]) -> dict[str, str]:
+    """The `prefix` section from `env_file`, then `environ` over it, keyed by field name."""
+    found = {} if env_file is None or not env_file.is_file() else dotenv_values(env_file)
+    merged = {k: v for k, v in found.items() if v is not None} | dict(environ)
+    return {
+        name[len(prefix) :].lower(): value
+        for name, value in merged.items()
+        if name.upper().startswith(prefix)
+    }
 
 
-def load_jcc(env_file: Path | None) -> JccSettings | None:
+def from_values[S: BaseSettings](cls: type[S], values: Mapping[str, str]) -> S:
+    """`cls` built from `values` alone: the process environment and `.env` are not read, so
+    a variable exported in the shell reaches the app only through the `environ` given."""
+    only = type(cls.__name__, (cls,), {"settings_customise_sources": classmethod(_only_init)})
+    built = only(**values)
+    if not isinstance(built, cls):
+        raise TypeError(f"expected {cls.__name__}, built {type(built).__name__}")
+    return built
+
+
+def load_jcc(env_file: Path | None, environ: Mapping[str, str]) -> JccSettings | None:
     """JCC's settings when `JCC_CALLBACK_SECRET` is set, else None; refuses a partial set."""
-    if not _JccPresence(_env_file=env_file).callback_secret.get_secret_value():
+    values = env_values("JCC_", env_file, environ)
+    if not values.get("callback_secret", ""):
         return None
-    return JccSettings(_env_file=env_file)
+    return from_values(JccSettings, values)
 
 
-def load_boc(env_file: Path | None) -> BocSettings:
+def load_boc(env_file: Path | None, environ: Mapping[str, str]) -> BocSettings:
     """The bocAPI settings `--bank boc` needs; refuses a set that can't complete a payment."""
-    settings = BocSettings(_env_file=env_file)
+    settings = from_values(BocSettings, env_values("BOC_", env_file, environ))
     missing = [
         f"BOC_{name.upper()}"
         for name in ("subscription_id", "account_id")
@@ -152,19 +177,12 @@ def load_boc(env_file: Path | None) -> BocSettings:
     return settings
 
 
-class _JiniusPresence(BaseSettings):
-    """Only whether `JINIUS_CLIENT_ID` is set: it decides whether Jinius is configured."""
-
-    model_config = SettingsConfigDict(env_prefix="JINIUS_", env_file=".env", extra="ignore")
-
-    client_id: str = ""
-
-
-def load_jinius(env_file: Path | None) -> JiniusSettings | None:
+def load_jinius(env_file: Path | None, environ: Mapping[str, str]) -> JiniusSettings | None:
     """The buyer's Jinius settings when `JINIUS_CLIENT_ID` is set, else None."""
-    if not _JiniusPresence(_env_file=env_file).client_id.strip():
+    values = env_values("JINIUS_", env_file, environ)
+    if not values.get("client_id", "").strip():
         return None
-    return JiniusSettings(_env_file=env_file)
+    return from_values(JiniusSettings, values)
 
 
 def _no_jinius() -> PayableFeed:
@@ -346,11 +364,11 @@ def load_settings(
             store=None if args.memory else args.store,
             day=args.day,
             cache=args.cache,
-            agent=AgentSettings(_env_file=env_file),
-            jcc=load_jcc(env_file),
-            jinius=load_jinius(env_file),
+            agent=from_values(AgentSettings, env_values("ENA_", env_file, environ)),
+            jcc=load_jcc(env_file, environ),
+            jinius=load_jinius(env_file, environ),
             model_credential=has_model_credential(environ),
-            boc=load_boc(env_file) if args.bank == "boc" else None,
+            boc=load_boc(env_file, environ) if args.bank == "boc" else None,
         )
     except ValidationError as error:
         problems = "; ".join(

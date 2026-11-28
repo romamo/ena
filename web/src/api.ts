@@ -292,10 +292,31 @@ export async function readJinius(fetcher: typeof fetch = fetch): Promise<JiniusF
     const detail = isRecord(body) && typeof body.detail === "string" ? body.detail : "";
     throw new ApiError(detail || `Jinius answered ${response.status}`);
   }
-  if (!isRecord(body) || !Array.isArray(body.invoices) || (body.source !== "live" && body.source !== "fixture")) {
+  if (
+    !isRecord(body) ||
+    !Array.isArray(body.invoices) ||
+    !body.invoices.every(isJiniusInvoice) ||
+    (body.source !== "live" && body.source !== "fixture") ||
+    typeof body.note !== "string"
+  ) {
     throw new ApiError(`not a Jinius answer: ${JSON.stringify(body)}`);
   }
   return body as JiniusFeed;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isJiniusInvoice(value: unknown): value is JiniusInvoice {
+  return (
+    isRecord(value) &&
+    typeof value.number === "string" &&
+    typeof value.supplier === "string" &&
+    Number.isInteger(value.amount_cents) &&
+    typeof value.issue_date === "string" &&
+    ISO_DATE.test(value.issue_date) &&
+    (value.due_date === null || (typeof value.due_date === "string" && ISO_DATE.test(value.due_date))) &&
+    typeof value.status === "string"
+  );
 }
 
 /** The owner's tap on an approval card; answers with the receipt card. */
