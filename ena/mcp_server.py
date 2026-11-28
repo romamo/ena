@@ -12,8 +12,10 @@ The tools are the only way the agent touches data or money. Their rules:
   payee always comes from the invoice the gate pays, never from the agent (§2, Q-3)
 
 `Ledger` reads the synthetic month (`ena/seed.py`) as of a day, plus the store: a record
-dated after today has not happened yet, a card sale booked from JCC counts, and an
-invoice's status comes from its gate receipt or pending approval. `ReplayDay` is a
+dated after today has not happened yet, a card sale booked from JCC counts, an
+invoice's status comes from its gate receipt or pending approval, and a payment the gate
+made is a statement line, as the bank posts it, unless the statement already pays the
+invoice (so the books match it, #59). `ReplayDay` is a
 replay `Handler` that moves that day forward as the month plays (`ena/replay.py`).
 
 `EnaTools` holds the tools as plain methods, so they are tested without an agent, and
@@ -53,8 +55,8 @@ from ena.models import (
     SupplierInvoice,
     Transaction,
 )
-from ena.replay import DayStarted, ReplayEvent
-from ena.rules.books import Books, match_books
+from ena.replay import TZ, DayStarted, ReplayEvent
+from ena.rules.books import Books, match_books, match_invoices
 from ena.rules.forecast import CashForecast, ScheduledFlow, euros, forecast_cash
 from ena.rules.loan import loan_offer
 from ena.rules.reserve import reserve_offer
@@ -118,11 +120,15 @@ class Ledger:
         return self._balance_before(self.today() + dt.timedelta(days=1))
 
     def transactions(self, first: dt.date, last: dt.date) -> list[Transaction]:
-        """The statement lines dated `first` to `last`, both included, up to today."""
+        """The statement lines dated `first` to `last`, both included, up to today: the
+        month's, and one for each payment the gate made that the statement doesn't hold."""
         if first > last:
             raise ToolError(f"from {first} is after to {last}")
         end = min(last, self.today())
-        return [tx for tx in self._month.transactions if first <= tx.date <= end]
+        lines = [*self._month.transactions, *(line for line, _ in self._gate_payments())]
+        return sorted(
+            (tx for tx in lines if first <= tx.date <= end), key=lambda tx: (tx.date, tx.id)
+        )
 
     def invoices(self) -> list[SupplierInvoice]:
         """The invoices that have arrived by today, each with its status from the store."""
@@ -186,12 +192,30 @@ class Ledger:
         return month.account.balance_cents + posted - self._paid_out_cents()
 
     def _paid_out_cents(self) -> int:
-        refs = {invoice.id for invoice in self._month.invoices}
-        return sum(
-            receipt.amount_cents
-            for receipt in self._store.receipts()
-            if receipt.ref in refs and receipt.result == PaymentResult.PAID
-        )
+        return sum(receipt.amount_cents for _, receipt in self._gate_payments())
+
+    def _gate_payments(self) -> list[tuple[Transaction, Receipt]]:
+        """Each invoice the gate paid that no line of the month's statement pays yet, with
+        the line the bank posts for it: on the receipt's day (the business's time zone),
+        to the supplier, with the invoice number in the reference."""
+        invoices = {invoice.id: invoice for invoice in self._month.invoices}
+        payments = []
+        for receipt in self._store.receipts():
+            invoice = invoices.get(receipt.ref)
+            if invoice is None or receipt.result != PaymentResult.PAID:
+                continue
+            if match_invoices([invoice], self._month.transactions).matches:
+                continue  # the bank's own line is on the statement: never counted twice
+            line = Transaction(
+                id=f"gate-{receipt.id}",
+                account_id=self._month.account.id,
+                date=receipt.at.astimezone(TZ).date(),
+                amount_cents=-receipt.amount_cents,
+                counterparty=invoice.supplier_name,
+                reference=f"Invoice {invoice.jinius_id}",
+            )
+            payments.append((line, receipt))
+        return payments
 
     def _with_status(self, invoice: SupplierInvoice) -> SupplierInvoice:
         receipt = self._store.receipt_for(invoice.id)
