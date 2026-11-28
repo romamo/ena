@@ -31,6 +31,34 @@ Looked around the portal while logged in; no API call made yet.
 - **Documents:** only the IBAN certificate is required; a labelled placeholder PDF was accepted. Board Resolution and SEPA mandate are optional ("or send a hard copy by post")
 - **Validate Account:** the supplier's IBAN is checked for a valid mod-97 checksum (the BoC docs' sample `CY11002003510000000012345671` fails it; a made-up `CY80002001950000357072811260` passes), plus a checkbox stating a €1 verification transfer to JINIUS LTD was made
 - **Result:** "under review … within the next two business days". Until approved the entity has only Dashboard, Contact Jinius and Report Content: no invoices, no Developer page, no API client. Approval asked of the Jinius mentors (#26)
+- **Approved** by 2026-11-28 midday: Invoices, Remittance Management and the rest of the menu are open
+
+### Integration API, first live calls (2026-11-28)
+
+The guides, the Swagger file (Jinius Integrations API 3.0, 2026-10-07) and the Postman collection came from the Jinius team (#26). They answer most UNKNOWNs in section 5; this subsection wins over it.
+
+- **API host:** `https://api.integration.platform.cy` (the portal host only serves the portal). Token: `POST /oauth/token`, form `grant_type=client_credentials` with the Client ID and Secret; same 5-minute token as the Keycloak URL above
+- **Plan gate is enforced.** DUMMY was on **Basic** (Settings → Subscription; the integration environment bills €0.00): `/v3/invoices/*` and `/v3/marketplace/*` answered **403 with an empty body**, `/v3/legalEntities` answered normally. After switching DUMMY to **Enterprise** the same token gets **200**. A 403 with an empty body means "plan", not "token"
+- **Seeding is done in the portal:** Ena Flour Mill → Invoices → Receivables → Add new. Required: recipient, number, issue and due date, at least one line, and an **invoice PDF** ("Invoice file is required"). The portal's date picker stores a typed due date one day early (typed 12-12, stored 11-12)
+- **Buyer reads** (VERIFIED, saved in `fixtures/jinius/`):
+
+| Call | Saved as | What it showed |
+|---|---|---|
+| `GET /v3/invoices/payable?page=1&pageSize=50` | `invoices_payable.json` | `documents[]` with the full invoice (lines, VAT, parties' VAT/TIN/registration numbers), `pageResponse {currentPage, totalPages, totalItems}` |
+| `GET /v3/invoices/{id}` | `invoice_EFM-2026-001.json` (€180), `invoice_EFM-2026-002.json` (€1,240) | Same shape as a list item |
+| `GET /v3/creditNotes/received?page=1&pageSize=50` | `credit_notes_received.json` | Same envelope; `kind: "CreditNote"`, `dueDate: "0001-01-01T00:00:00"` (none) |
+| `GET /v3/creditNotes/{id}` | `credit_note_EFM-CN-2026-001.json` (€119) | Standalone credit note; the portal form doesn't link it to an invoice (the API has `POST /v3/invoices/{id}/creditNotes` for that) |
+| `GET /v3/legalEntities?VatNumber=…&CompanyRegistrationNumber=…` | | Needs two of VAT, TIN, registration number (400 otherwise); 404 `NotFound` for an unknown company |
+
+- **Shape notes for the connector (#7):**
+  - Amounts are JSON floats and **not rounded**: `totalAmount` 179.9994 for a €180.00 invoice (6 × 25.21 + 19 %), 1240.0038 for €1,240.00. Convert with `Decimal(str(x)).quantize(Decimal("0.01"))` into cents; never trust the float
+  - A freshly sent invoice is `status: "WaitingApproval"` on the buyer side (the portal shows Submitted to the supplier); a credit note is `Created`
+  - `taxPercentage` is a name (`"NineteenPercent"`), not a number
+  - Dates are ISO strings in UTC midnight (`2026-12-11T00:00:00Z`)
+  - The payload carries no supplier IBAN; payment details come from the supplier's Get Paid settings
+  - Errors are `{"StatusCode": "<code>", "Detail": "<text>"}` (`InvalidArgument`, `NotFound`); a plan or permission refusal is a bare 403
+- **Calls for the rest of the loop** (from the Swagger file, not yet called): approve `POST /v3/invoices/{id}/approve`, reject `…/reject`, mark paid (buyer) `…/markAsPaid`, pay through 1bank `…/payments`, accept payment (supplier) `…/acceptPayment`, set paid (supplier) `…/setAsPaid`, remittance `POST /v3/remittances` and `GET /v3/remittances/{processingId}`
+- **Mock payments (guide 4):** once an entity is approved every payment is mocked and ends `Completed`; four IBANs in the guide simulate pending or rejected. "Pay Others with 1bank" connects with any 8-digit UserID and the BoC sandbox's mock login and OTP
 
 ## 1. Sources
 
