@@ -26,3 +26,23 @@ jobs:
       - run: uv run ruff format --check
       - run: uv run mypy ena tests
       - run: uv run pytest
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/package.json
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # web/.npmrc keeps package install scripts off
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
