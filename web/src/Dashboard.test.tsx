@@ -178,6 +178,7 @@ describe("Dashboard", () => {
       note: "Jinius integration environment, live",
       invoices: [
         {
+          id: "d7778e64-5206-45e5-9d04-b24174130ec3",
           number: "EFM-2026-002",
           supplier: "Ena Flour Mill Ltd",
           amount_cents: 124000,
@@ -242,5 +243,85 @@ describe("Dashboard", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Jinius" }));
     fireEvent.click(screen.getByRole("button", { name: "Read invoices from Jinius" }));
     expect((await screen.findByRole("alert")).textContent).toContain("not a Jinius answer");
+  });
+
+  it("approves a Jinius invoice, then marks it paid, on the owner's taps", async () => {
+    const id = "d7778e64-5206-45e5-9d04-b24174130ec3";
+    const invoice = {
+      id,
+      number: "EFM-2026-002",
+      supplier: "Ena Flour Mill Ltd",
+      amount_cents: 124000,
+      issue_date: "2026-11-28",
+      due_date: "2026-12-27",
+      status: "WaitingApproval",
+    };
+    const fetcher = answering({
+      ...ROUTES,
+      "/jinius/invoices": () => Response.json({ source: "live", note: "live", invoices: [invoice] }),
+      [`/jinius/invoices/${id}/approve`]: () => Response.json({ ...invoice, status: "Approved" }),
+      [`/jinius/invoices/${id}/mark-paid`]: () => Response.json({ ...invoice, status: "PendingPaymentAcceptance" }),
+    });
+    openDashboard(fetcher);
+    fireEvent.click(screen.getByRole("tab", { name: "Jinius" }));
+    fireEvent.click(screen.getByRole("button", { name: "Read invoices from Jinius" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Approve on Jinius" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Mark paid on Jinius" }));
+    const card = screen.getByRole("article", { name: "Invoice EFM-2026-002" });
+    await waitFor(() => expect(card.textContent).toContain("PendingPaymentAcceptance"));
+    expect(within(card).queryByRole("button")).toBeNull();
+    expect(fetcher).toHaveBeenCalledWith(`/jinius/invoices/${id}/approve`, { method: "POST" });
+    expect(fetcher).toHaveBeenCalledWith(`/jinius/invoices/${id}/mark-paid`, { method: "POST" });
+  });
+
+  it("names Jinius's refusal on the invoice and keeps its button", async () => {
+    const id = "d7778e64-5206-45e5-9d04-b24174130ec3";
+    const invoice = {
+      id,
+      number: "EFM-2026-002",
+      supplier: "Ena Flour Mill Ltd",
+      amount_cents: 124000,
+      issue_date: "2026-11-28",
+      due_date: null,
+      status: "Approved",
+    };
+    openDashboard(
+      answering({
+        ...ROUTES,
+        "/jinius/invoices": () => Response.json({ source: "live", note: "live", invoices: [invoice] }),
+        [`/jinius/invoices/${id}/mark-paid`]: () =>
+          Response.json({ detail: "EFM-2026-002 is WaitingApproval: approve it first" }, { status: 409 }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Jinius" }));
+    fireEvent.click(screen.getByRole("button", { name: "Read invoices from Jinius" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Mark paid on Jinius" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("EFM-2026-002 is WaitingApproval: approve it first");
+    expect(screen.getByRole("button", { name: "Mark paid on Jinius" })).toBeTruthy();
+  });
+
+  it("offers no tap on saved data", async () => {
+    const invoice = {
+      id: "d7778e64-5206-45e5-9d04-b24174130ec3",
+      number: "EFM-2026-002",
+      supplier: "Ena Flour Mill Ltd",
+      amount_cents: 124000,
+      issue_date: "2026-11-28",
+      due_date: null,
+      status: "WaitingApproval",
+    };
+    openDashboard(
+      answering({
+        ...ROUTES,
+        "/jinius/invoices": () =>
+          Response.json({ source: "fixture", note: "Jinius sandbox offline", invoices: [invoice] }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Jinius" }));
+    fireEvent.click(screen.getByRole("button", { name: "Read invoices from Jinius" }));
+    const card = await screen.findByRole("article", { name: "Invoice EFM-2026-002" });
+    expect(within(card).queryByRole("button")).toBeNull();
   });
 });
