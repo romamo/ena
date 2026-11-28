@@ -448,6 +448,11 @@ class EnaTools:
         """The ledger's state digest, part of the reply cache's key (`ena/cache.py`)."""
         return self._ledger.state()
 
+    def pending_approvals(self) -> list[ApprovalRequest]:
+        """The approvals that wait for the owner's tap, one per invoice awaiting approval."""
+        pending = (self._store.pending_approval_for(i.id) for i in self._ledger.invoices())
+        return [approval for approval in pending if approval is not None]
+
     # Reads
 
     def get_balance(self) -> BalanceResult:
