@@ -1,6 +1,50 @@
-# The stage demo: two laptops
+# The stage demo
 
-The talk has 4 minutes in all, so the live demo gets about a minute and a half. One laptop runs Ena (the API, the agent and the chat page); the other is plugged into the projector and only opens a browser. If the agent laptop goes down, the projector laptop still has the deck and the backup video.
+The talk has 4 minutes in all, so the live demo gets about a minute and a half. The demo runs on the hosted site, https://ena.cloudfall.dev, from the projector laptop's browser, and pays through the bocAPI sandbox: each payment is confirmed on Bank of Cyprus's own screen. The two-laptop setup below is the fallback if the hosted site is down, and the backup video is the fallback for both.
+
+## The hosted demo
+
+The site runs `ena-serve --bank boc` with the synthetic month as of 16 November (`deploy/README.md`). Nothing runs on the laptop: it needs only a browser, the deck and the backup video. Every question goes to the model live, since the hosted server runs no reply cache.
+
+All visitors share one store. One visitor's approvals and receipts are what the next one sees, so a payment made before the talk changes the stage path: "Pay the flour invoice" then answers that it is already paid instead of showing the approval card.
+
+### Before the talk
+
+1. A person resets the store over SSH, with the step in `deploy/README.md` (stop `ena`, remove `/srv/apps/ena/web/shared/ena.db`, start `ena`)
+2. Check the site from the laptop:
+
+   ```bash
+   curl -s https://ena.cloudfall.dev/bank
+   ```
+
+   ```bash
+   curl -s https://ena.cloudfall.dev/dashboard/overview | jq '.pending, .unpaid_invoices, .unpaid_cents'
+   ```
+
+   `{"live":true}`, then `[]`, `2` and `142000` (the €1,240 flour and €180 dairy invoices) mean the site is ready. `{"live":false}` means the server runs the stand-in bank: the payment is simulated and no BoC screen appears
+3. Check Jinius: `curl -s https://ena.cloudfall.dev/jinius/invoices | jq '.source, [.invoices[].number]'` answers as in [Check Jinius before the talk](#check-jinius-before-the-talk)
+4. The app in the BoC sandbox portal (My Apps) has `https://ena.cloudfall.dev/boc/consent` as its redirect URI; without it BoC's screen never sends the browser back to Ena
+5. Don't use the hosted chat after the reset. A rehearsal on it pays the invoices for real in the sandbox; reset the store again after one
+
+Open https://ena.cloudfall.dev in a phone-sized window (the browser's device mode at about 400 pixels wide), zoomed so the back row can read it, and keep the BoC test login at hand: `999999` / `112233`, OTP `123456`.
+
+### The hosted path on stage
+
+1. Dashboard → **Jinius** → **Read invoices from Jinius**: EFM-2026-002, €1,240 from Ena Flour Mill Ltd, "Waiting approval", under a green "Live" line; back to the chat with "Back to chat"
+2. "Pay the flour invoice": the €1,240 approval card, above the €500 limit
+3. Approve: the "Confirm in Bank of Cyprus" card (BoC sandbox, €1,240.00). Nothing is paid until the bank confirms it
+4. **Confirm in Bank of Cyprus**: BoC's own screen opens in a new tab. Log in as `999999` / `112233`, pick the account, enter OTP `123456` and confirm. Say "this is the bank's own consent screen, not ours"
+5. BoC sends the browser back to `https://ena.cloudfall.dev/boc/consent`, which executes the payment: the receipt, labelled "BoC sandbox payment", bank status `CPLT`
+6. "Will I be short of cash this month?": the forecast flags the week of 16 November
+7. "Can I get an advance for the Georgiou wedding's costs?": the advance offer
+
+The consent adds about 30 seconds, so say the rest in words. Only one confirmation waits at a time: if an earlier one is still waiting, tap Cancel on its card before step 2. A consent's code works once, so a failed return means a new payment, not a retry. If BoC's screen errors or doesn't send the browser back, say so and switch to the backup video.
+
+The card payment through JCC works on the hosted site without a tunnel: the JCC portal's webhook points at `https://ena.cloudfall.dev/jcc/callback` (`deploy/README.md`). Run the steps in [The card payment through JCC](#the-card-payment-through-jcc-optional) from step 1; there's no terminal to watch, so check the booking with step 4's books question.
+
+## The fallback: two laptops
+
+One laptop runs Ena (the API, the agent and the chat page); the other is plugged into the projector and only opens a browser. If the agent laptop goes down, the projector laptop still has the deck and the backup video.
 
 | Laptop | Runs | Needs |
 |---|---|---|
@@ -56,7 +100,7 @@ curl -s http://127.0.0.1:8000/jinius/invoices | jq '.source, [.invoices[].number
 
 `--cache` answers a demo question the same way every time and at once, but only a reply that moved no money is cached: a reply with an approval or a payment always goes to the model (`ena/cache.py`). So "Pay the flour invoice" and its Approve call the model live on stage, and the forecast, reserve, loan and advance questions come from the cache once a rehearsal has asked them on the same day and ledger state. Fill the cache by running the demo path once with the same `--cache` file and the same `--day`, then keep the file.
 
-## The path on stage
+## The two-laptop path on stage
 
 1. Dashboard → **Jinius** → **Read invoices from Jinius**: EFM-2026-002, €1,240 from Ena Flour Mill Ltd, "Waiting approval", under a green "Live" line. This is the one step that shows a partner API working live; back to the chat with "Back to chat"
 2. "Pay the flour invoice": the €1,240 approval card, above the €500 limit
