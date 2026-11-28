@@ -531,7 +531,9 @@ def test_mark_paid_refuses_an_invoice_not_yet_approved_and_sends_nothing() -> No
         }
     )
 
-    with pytest.raises(NotApproved, match="EFM-2026-001 is WaitingApproval: approve it first"):
+    with pytest.raises(
+        NotApproved, match="WaitingApproval: only an approved invoice"
+    ):
         desk(api).mark_paid(INVOICE_180)
 
     assert [r.method for r in api.seen] == ["GET"]
@@ -542,3 +544,49 @@ def test_without_a_client_the_desk_sends_nothing() -> None:
 
     with pytest.raises(JiniusNotConfigured, match="not configured here"):
         idle.approve(INVOICE_180)
+
+
+def test_two_concurrent_mark_paid_taps_send_one_mark_paid() -> None:
+    approved = invoice_data(status="Approved")
+    pending = invoice_data(status="PendingPaymentAcceptance")
+    status = {"now": approved}
+    marks = 0
+    first_mark = threading.Event()
+    release = threading.Event()
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal marks
+        if str(request.url) == TOKEN_URL:
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 300})
+        if request.method == "POST":
+            marks += 1
+            first_mark.set()
+            release.wait(timeout=5)
+            status["now"] = pending
+            return httpx.Response(200)
+        return httpx.Response(200, json=status["now"])
+
+    jinius = JiniusDesk(
+        JiniusClient(settings(), httpx.Client(transport=httpx.MockTransport(handle)), Clock()),
+        lambda: TODAY,
+    )
+    refused: list[Exception] = []
+
+    def second_tap() -> None:
+        try:
+            jinius.mark_paid(INVOICE_180)
+        except NotApproved as error:
+            refused.append(error)
+
+    first = threading.Thread(target=jinius.mark_paid, args=(INVOICE_180,))
+    second = threading.Thread(target=second_tap)
+    first.start()
+    assert first_mark.wait(timeout=5)
+    second.start()
+    time.sleep(0.1)  # let the second tap reach the desk while the first mark is in flight
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert marks == 1
+    assert len(refused) == 1

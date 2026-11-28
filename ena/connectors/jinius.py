@@ -476,29 +476,37 @@ class JiniusDesk:
         self._client = client
         self._today = today
         self._not_configured = not_configured
+        self._taps = threading.Lock()
+        """One tap at a time: two taps can't both pass the approved check and mark it paid
+        twice."""
 
     def read(self) -> PayableFeed:
         return read_payable(self._jinius())
 
     def approve(self, document_id: DocumentId) -> PayableInvoice:
         jinius = self._jinius()
-        jinius.approve(document_id)
-        return PayableInvoice.of(jinius.invoice(document_id))
+        with self._taps:
+            jinius.approve(document_id)
+            return PayableInvoice.of(jinius.invoice(document_id))
 
     def mark_paid(self, document_id: DocumentId) -> PayableInvoice:
         """Report the invoice paid in full today, referenced by its number."""
         jinius = self._jinius()
-        document = jinius.invoice(document_id)
-        if document.status != APPROVED:
-            raise NotApproved(f"{document.document_number} is {document.status}: approve it first")
-        payment = ManualPayment(
-            amount_cents=document.amount_cents,
-            paid_on=self._today(),
-            reference=f"ENA-{document.document_number}",
-            comment=MARK_PAID_COMMENT,
-        )
-        jinius.mark_paid(document_id, payment)
-        return PayableInvoice.of(jinius.invoice(document_id))
+        with self._taps:
+            document = jinius.invoice(document_id)
+            if document.status != APPROVED:
+                raise NotApproved(
+                    f"{document.document_number} is {document.status}: only an approved "
+                    "invoice can be marked paid; read the invoices again"
+                )
+            payment = ManualPayment(
+                amount_cents=document.amount_cents,
+                paid_on=self._today(),
+                reference=f"ENA-{document.document_number}",
+                comment=MARK_PAID_COMMENT,
+            )
+            jinius.mark_paid(document_id, payment)
+            return PayableInvoice.of(jinius.invoice(document_id))
 
     def _jinius(self) -> JiniusClient:
         if self._client is None:

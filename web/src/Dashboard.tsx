@@ -451,7 +451,12 @@ function JiniusTab({ load, read, taps, tap }: JiniusRead) {
       <section className="panel" aria-label="Invoices on Jinius">
         <h2 className="eyebrow">Invoices on Jinius</h2>
         <p className="muted small">The invoices your suppliers sent you through Jinius, read when you tap.</p>
-        <button type="button" className="primary" disabled={load?.state === "loading"} onClick={read}>
+        <button
+          type="button"
+          className="primary"
+          disabled={load?.state === "loading" || Object.values(taps).some((t) => t.state === "busy")}
+          onClick={read}
+        >
           {load?.state === "loading" ? "Reading…" : "Read invoices from Jinius"}
         </button>
       </section>

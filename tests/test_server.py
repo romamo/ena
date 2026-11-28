@@ -464,7 +464,7 @@ def test_mark_paid_before_approval_is_refused_409() -> None:
     answer = tap(transport, f"/jinius/invoices/{INVOICE_ID}/mark-paid")
 
     assert answer.status_code == 409
-    assert answer.json()["detail"] == "EFM-2026-001 is WaitingApproval: approve it first"
+    assert answer.json()["detail"].startswith("EFM-2026-001 is WaitingApproval: only an approved")
 
 
 def test_a_tap_on_a_malformed_id_is_404_and_sends_nothing() -> None:

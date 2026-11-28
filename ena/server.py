@@ -60,7 +60,7 @@ from ena.api import create_app
 from ena.cache import ReplyCache
 from ena.connectors.boc import BocClient, BocSettings
 from ena.connectors.boc_bank import AccountReads, BocBank, check_redirect
-from ena.connectors.jcc import JccClient, JccSettings, JccUnavailable
+from ena.connectors.jcc import CYPRUS, JccClient, JccSettings, JccUnavailable
 from ena.connectors.jinius import (
     JiniusClient,
     JiniusDesk,
@@ -304,9 +304,9 @@ def build(
     if settings.jinius is not None:
         jinius_http = httpx.Client(transport=jinius_transport, timeout=10.0)
         jinius_client = JiniusClient(settings.jinius, jinius_http)
-    # Jinius's records are real ones in its integration environment: the day is today's,
-    # not the synthetic month's
-    jinius = JiniusDesk(jinius_client, lambda: _now().date(), NO_JINIUS)
+    # Jinius's records are real ones in its integration environment: the day is today's in
+    # Cyprus, not the synthetic month's
+    jinius = JiniusDesk(jinius_client, lambda: _now().astimezone(CYPRUS).date(), NO_JINIUS)
 
     jcc = JccClient(jcc_settings, http)
     tools = EnaTools(
