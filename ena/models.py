@@ -233,6 +233,9 @@ class Receipt(_Entity):
     """What the action was on: an invoice, a payment or an offer."""
     result: str
     explanation: str
+    simulated: Flag = False
+    """A paid payment whose bank moves no money (the stand-in); False for any other
+    receipt, and for one stored before the label existed."""
 
 
 Card = ApprovalRequest | Receipt | Forecast | Offer

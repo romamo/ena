@@ -119,6 +119,9 @@ def has_model_credential(environ: Mapping[str, str]) -> bool:
 class StandInBank:
     """Completes every payment: the gate is not wired to bocAPI yet (README, the loop)."""
 
+    simulated = True
+    """No money moves: each receipt it completes says simulated."""
+
     def pay(self, action: str, amount_cents: int, ref: str) -> str:
         log.info("stand-in bank: %s, %d cents, ref %s", action, amount_cents, ref)
         return COMPLETED
