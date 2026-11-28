@@ -1,5 +1,16 @@
 # Pitch deck
 
+## The deck on the official template
+
+[Ena-pitch.pptx](Ena-pitch.pptx) is the stage deck: 11 slides on the organisers' template, 8 shown (interviews video, cover, the four jobs, how it works, live demo, built during the hackathon, how Bank of Cyprus ships it, thank you) and 3 backups (Jinius, architecture, brand). Both videos autoplay; each slide's speaker notes come from [script.md](script.md), the full spoken script with timings and the expected questions.
+
+- Rebuild it from `docs/pitch/`: `python pptx/build_deck.py` (needs `python-pptx`, `lxml`, `Pillow`, `ffmpeg` and `gh`). It reads the commit, PR and issue counts for slide 6 from git and GitHub; update `TESTS` in the script after a test run.
+- [brand/](brand/): the Ena mark and logo (SVG and PNG), the Canva logo and preview images of the brand and cover slides.
+- [video/](video/): the interviews video for slide 1, the Ena closer for slide 8 and two alternative interview cuts.
+- [web/](web/): the same deck as a Claude Slides artifact (slide HTML, `deck.css`, `deck.json`) and its compressed assets.
+
+## The first draft (HTML)
+
 The five-slide deck for the 4 minute pitch, with speaker notes under each slide. Open [deck.html](deck.html) in a browser from a checkout: it reads its styles from [deck.css](deck.css) and the phone screens from [../mockups/](../mockups/README.md).
 
 | Slide | What it says |
