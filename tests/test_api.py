@@ -85,7 +85,7 @@ class ScriptedAgent:
         for step in self.steps:
             match step:
                 case Call():
-                    call_tool(self.tools, step.tool, step.arguments)
+                    await call_tool(self.tools, step.tool, step.arguments)
                 case Say():
                     yield step.text
                 case Fail():
@@ -401,6 +401,10 @@ def test_the_jcc_callback_is_still_served(api: Api) -> None:
         ("It is not paid yet: it waits for your approval.", False),
         ("You have two unpaid invoices.", False),
         ("I haven't paid it.", False),
+        ("Nothing has been paid yet: the sale is booked when JCC confirms it.", False),
+        # A negation in an earlier clause doesn't negate the claim
+        ("Nothing else is due, I paid the dairy invoice.", True),
+        ("Nothing was declined, I paid the dairy invoice.", True),
         ("Your balance is €1,120.00.", False),
     ],
 )

@@ -64,7 +64,24 @@ curl -s http://127.0.0.1:8000/jinius/invoices | jq '.source, [.invoices[].number
 4. "Will I be short of cash this month?": the forecast flags the week of 16 November
 5. "Can I get an advance for the Georgiou wedding's costs?": the advance offer
 
-Say the rest in words. In step 1, say "this is the feed Ena reads from Jinius", not "the invoice Ena pays": the chat runs on the synthetic month, whose flour invoice comes from Mesaoria Mills, and approving it changes nothing in Jinius. The page's "Synthetic demo" banner stays visible above the Jinius tab, so say that the tab is the live part. The card payment through JCC is optional: its callback reaches the agent laptop only through a tunnel to port 8000 (`docs/jcc-notes.md`, section 3).
+Say the rest in words. In step 1, say "this is the feed Ena reads from Jinius", not "the invoice Ena pays": the chat runs on the synthetic month, whose flour invoice comes from Mesaoria Mills, and approving it changes nothing in Jinius. The page's "Synthetic demo" banner stays visible above the Jinius tab, so say that the tab is the live part.
+
+## The card payment through JCC (optional)
+
+About 20 seconds after the advance offer, if the time allows. It needs the JCC keys and `JCC_RETURN_URL` in `.env`, and a tunnel to port 8000 that JCC's callback reaches:
+
+```bash
+ngrok http 8000
+```
+
+In the test Merchant Portal, set the webhook (Settings → Merchant → Webhooks) to Static, POST, symmetric, operation Deposited, URL `https://<ngrok host>/jcc/callback`, and save it: the sandbox sent no callback for `dynamicCallbackUrl` alone (`docs/jcc-notes.md`, section 0). Rehearse it once on the day.
+
+1. "Make a €15 pay link for two loaves and a coffee": the pay link card with its QR code
+2. Scan it with a phone and pay with the test card `4444 5555 1111 3333`, CVC `123`, expiry `12/26` (no 3D Secure)
+3. About 10 seconds later the `ena-serve` terminal logs `POST /jcc/callback` with 200: the sale is booked as `jcc-<order id>`
+4. "Show my books from 16 to 30 November": the €15.00 sale, unmatched until JCC settles it to the account
+
+A live sale is dated the real day, not the demo's 16 November, so it shows in the books but not in the forecast. If no callback comes within about 20 seconds, say so and move on. `JCC_RETURN_URL` can be the tunnel's address: Ena serves no page there, so the phone shows "not found" after paying, which doesn't affect the booking.
 
 ## If the laptops can't see each other
 

@@ -10,6 +10,7 @@ import {
   DECLINED,
   FORECAST,
   LOAN,
+  PAY_LINK,
   RECEIPT,
   SANDBOX_RECEIPT,
   sse,
@@ -104,6 +105,26 @@ describe("App", () => {
     expect(fetcher).toHaveBeenCalledWith("/offers/advance-syn-event-0014-280000/accept", {
       method: "POST",
     });
+  });
+
+  it("shows a pay link with its QR code and the payment page", async () => {
+    const fetcher = answering({
+      "/chat": () => streaming(sse(PAY_LINK, { kind: "done", text: "Here it is.", unconfirmed: false, cached: false })),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Make a €15 pay link for two loaves and a coffee" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const card = await screen.findByRole("article", { name: "Pay link" });
+    expect(within(card).getByText("€15.00")).toBeTruthy();
+    expect(within(card).getByText("JCC sandbox")).toBeTruthy();
+    const qr = await within(card).findByRole("img", { name: "QR code to pay €15.00 by card" });
+    expect(qr.getAttribute("src")).toMatch(/^data:image\/svg\+xml;charset=utf-8,%3Csvg/);
+    const page = within(card).getByRole("link", { name: "Open the payment page" });
+    expect(page.getAttribute("href")).toBe(PAY_LINK.card_kind === "pay_link" ? PAY_LINK.card.url : "");
+    expect(within(card).getByText(/Nothing has moved yet/).textContent).toContain("Only a test card pays it.");
   });
 
   it("labels a receipt simulated only when the API says so", async () => {

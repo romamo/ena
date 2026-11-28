@@ -323,7 +323,33 @@ class BankAccount(_Entity):
     copy's, or none when there is no copy."""
 
 
-Card = ApprovalRequest | BankConsent | Receipt | Forecast | Offer | BankAccount
+class PayLink(_Entity):
+    """A JCC hosted payment page for a customer to pay the business by card (§5).
+
+    Money in: creating it moves nothing. The sale is booked only when JCC's callback
+    confirms the deposit (`POST /jcc/callback`), as `jcc-<jcc_order_id>`.
+    """
+
+    id: Id
+    """Ena's order number, as sent to `register.do`."""
+    jcc_order_id: Id
+    amount_cents: Annotated[int, Field(strict=True, gt=0)]
+    description: Annotated[str, StringConstraints(min_length=1)]
+    url: Annotated[str, StringConstraints(pattern=r"^https://")]
+    """JCC's `formUrl`: the payer opens it, or scans it as a QR code."""
+    created_at: AwareDatetime
+    expires_at: AwareDatetime
+    sandbox: Flag
+    """A link on JCC's test gateway: only test cards pay it, and no money moves."""
+
+    @model_validator(mode="after")
+    def _expires_after_created(self) -> Self:
+        if self.expires_at <= self.created_at:
+            raise ValueError("expires_at must be after created_at")
+        return self
+
+
+Card = ApprovalRequest | BankConsent | Receipt | Forecast | Offer | BankAccount | PayLink
 """What a chat message can show as a card (§8)."""
 
 

@@ -87,13 +87,28 @@ export type OfferCard = {
   simulated: boolean;
 };
 
+/** A JCC hosted payment page a customer pays by card: money in, nothing moved yet. */
+export type PayLinkCard = {
+  id: string;
+  jcc_order_id: string;
+  amount_cents: number;
+  description: string;
+  /** JCC's `formUrl`, always https. */
+  url: string;
+  created_at: IsoDateTime;
+  expires_at: IsoDateTime;
+  /** JCC's test gateway: only a test card pays it. */
+  sandbox: boolean;
+};
+
 export type CardEvent =
   | { kind: "card"; card_kind: "approval"; card: ApprovalCard }
   | { kind: "card"; card_kind: "consent"; card: ConsentCard }
   | { kind: "card"; card_kind: "account"; card: AccountCard }
   | { kind: "card"; card_kind: "receipt"; card: ReceiptCard }
   | { kind: "card"; card_kind: "forecast"; card: ForecastCard }
-  | { kind: "card"; card_kind: "offer"; card: OfferCard };
+  | { kind: "card"; card_kind: "offer"; card: OfferCard }
+  | { kind: "card"; card_kind: "pay_link"; card: PayLinkCard };
 
 export type ChatEvent =
   | { kind: "text"; text: string }
@@ -102,7 +117,15 @@ export type ChatEvent =
   | { kind: "error"; message: string };
 
 const EVENT_KINDS = new Set(["text", "card", "done", "error"]);
-const CARD_KINDS = new Set(["approval", "consent", "receipt", "forecast", "offer", "account"]);
+const CARD_KINDS = new Set([
+  "approval",
+  "consent",
+  "receipt",
+  "forecast",
+  "offer",
+  "account",
+  "pay_link",
+]);
 
 export class ApiError extends Error {}
 

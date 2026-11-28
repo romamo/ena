@@ -40,13 +40,19 @@ nothing is paid until the owner confirms. `get_bank_account` reads the live Bank
 sandbox account (a sample customer's) when the server has one; its figures are the
 sandbox's, never the synthetic month's, and its card keeps the reply out of the cache.
 
-Not here yet: `create_pay_link` (the JCC connector has no register call).
+`create_pay_link` is money in: it registers a JCC order for an amount the owner names and
+shows its hosted payment page as a card with a QR code. It moves no money and goes
+through no gate, but writes a receipt that Ena created the link; the sale itself is
+booked only by JCC's callback. Each call is a new JCC order, so its reply is never
+cached. Without JCC's settings and `JCC_RETURN_URL` the tool refuses.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import inspect
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
@@ -54,6 +60,7 @@ from typing import Any, Literal, Protocol
 from claude_agent_sdk import McpSdkServerConfig, SdkMcpTool, ToolAnnotations, create_sdk_mcp_server
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
+from ena.connectors.jcc import JccClient, JccError
 from ena.gate import BankUnavailable, Clock, Gate, PaymentResult
 from ena.models import (
     Actor,
@@ -70,6 +77,7 @@ from ena.models import (
     IsoDate,
     Loan,
     Offer,
+    PayLink,
     Receipt,
     SupplierInvoice,
     Transaction,
@@ -94,6 +102,11 @@ SERVER_NAME = "ena"
 
 MAX_RECEIPTS = 50
 """The most receipts `list_receipts` returns at once."""
+
+MAX_PAY_LINK_CENTS = 500_000
+"""The largest pay link the agent may create: €5,000."""
+MAX_PAY_LINK_DESCRIPTION = 120
+NO_PAY_LINKS = "pay links are off: JCC is not configured, or JCC_RETURN_URL is not set"
 
 _WEEK = dt.timedelta(weeks=1)
 _FORECAST_WEEKS = 8
@@ -193,6 +206,10 @@ class Ledger:
         parts += [f"invoice {i.id} {i.status}" for i in self.invoices()]
         parts += [f"sale {s.jcc_order_id}" for s in self._store.card_sales()]
         return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
+
+    def live_sale_ids(self) -> frozenset[str]:
+        """The ids of the card sales booked from JCC's callback, not from the seed."""
+        return frozenset(sale.id for sale in self._store.card_sales())
 
     def card_sales(self, before: dt.date) -> list[CardSale]:
         """The seed's card sales and those booked from JCC, dated before `before`."""
@@ -412,6 +429,12 @@ class OfferResult(_Result):
     note: str
 
 
+class PayLinkResult(_Result):
+    pay_link: PayLink
+    amount: str
+    note: str
+
+
 class EventView(_Result):
     id: str
     customer: str
@@ -459,12 +482,14 @@ class EnaTools:
         gate: Gate,
         clock: Clock,
         bank: BankReader | None = None,
+        pay_links: JccClient | None = None,
     ) -> None:
         self._ledger = ledger
         self._store = store
         self._gate = gate
         self._clock = clock
         self._bank = bank
+        self._pay_links = pay_links if pay_links is not None and pay_links.issues_links else None
         self._turn = Turn()
 
     def start_turn(self) -> None:
@@ -523,7 +548,14 @@ class EnaTools:
     def get_books(self, from_date: str, to_date: str) -> BooksResult:
         first, last = _date(from_date, "from"), _date(to_date, "to")
         lines = self._ledger.transactions(first, last)
-        sales = [s for s in self._ledger.card_sales(last + dt.timedelta(days=1)) if s.date >= first]
+        # A month's sale after today has not happened yet; one JCC confirmed has, whatever
+        # its real date against the demo's day
+        today, live = self._ledger.today(), self._ledger.live_sale_ids()
+        sales = [
+            s
+            for s in self._ledger.card_sales(last + dt.timedelta(days=1))
+            if s.date >= first and (s.date <= today or s.id in live)
+        ]
         books: Books = match_books(self._ledger.invoices(), sales, lines)
         return BooksResult(
             from_date=first,
@@ -536,7 +568,13 @@ class EnaTools:
             matched_card_sales=len(books.sale_matches),
             unmatched_invoices=tuple(_invoice(i) for i in books.unmatched_invoices),
             unmatched_card_sales=tuple(
-                f"{s.id} {s.date} {euros(s.amount_cents)}" for s in books.unmatched_sales
+                f"{s.id} {s.date} {euros(s.amount_cents)}"
+                + (
+                    ": a card payment JCC confirmed, booked live; not settled to the account yet"
+                    if s.id in live
+                    else ""
+                )
+                for s in books.unmatched_sales
             ),
             unmatched_payments=tuple(_transaction(tx) for tx in books.unmatched_payments),
             unmatched_deposits=tuple(_transaction(tx) for tx in books.unmatched_deposits),
@@ -689,6 +727,63 @@ class EnaTools:
             offer=offer,
             amount=euros(offer.amount_cents),
             note="Offer, simulated: a pre-filled Digital Business Loan, not a promise",
+        )
+
+    async def create_pay_link(self, amount_cents: int, description: str) -> PayLinkResult:
+        """A JCC pay link for a customer to pay the business by card; it moves no money."""
+        if self._pay_links is None:
+            raise ToolError(NO_PAY_LINKS)
+        if type(amount_cents) is not int or not 1 <= amount_cents <= MAX_PAY_LINK_CENTS:
+            raise ToolError(
+                f"amount_cents must be an integer from 1 to {MAX_PAY_LINK_CENTS}, got"
+                f" {amount_cents!r}"
+            )
+        text = " ".join(description.split()) if isinstance(description, str) else ""
+        if not 1 <= len(text) <= MAX_PAY_LINK_DESCRIPTION:
+            raise ToolError(f"description must be 1 to {MAX_PAY_LINK_DESCRIPTION} characters")
+        order_number = f"ena-{uuid.uuid4().hex[:16]}"
+        try:
+            registration = await self._pay_links.register(order_number, amount_cents, text)
+        except JccError as error:
+            raise ToolError(f"JCC did not create the link: {error}") from error
+        created = self._clock()
+        sandbox = self._pay_links.sandbox
+        link = PayLink(
+            id=order_number,
+            jcc_order_id=str(registration.order_id),
+            amount_cents=amount_cents,
+            description=text,
+            url=str(registration.form_url),
+            created_at=created,
+            expires_at=created + dt.timedelta(seconds=self._pay_links.settings.link_seconds),
+            sandbox=sandbox,
+        )
+        self._turn.cards.append(link)
+        amount = euros(amount_cents)
+        test = " JCC sandbox: only a test card pays it, and no money moves." if sandbox else ""
+        self._store.add_receipt(
+            Receipt(
+                id=f"receipt-{order_number}",
+                at=created,
+                actor=Actor.ENA,
+                action="Create a JCC card payment link",
+                amount_cents=amount_cents,
+                ref=link.jcc_order_id,
+                result="link_created",
+                explanation=(
+                    f"Pay link for {amount}: {text}. Nothing is booked until JCC confirms"
+                    f" the card payment.{test}"
+                ),
+            )
+        )
+        return PayLinkResult(
+            pay_link=link,
+            amount=amount,
+            note=(
+                f"Link created for {amount}, open until {link.expires_at:%H:%M} UTC; the card"
+                " shows it as a QR code. The sale is booked when JCC confirms the card"
+                f" payment; nothing has moved yet.{test}"
+            ),
         )
 
     def get_event_pattern(self) -> EventPatternResult:
@@ -846,7 +941,7 @@ class ToolSpec:
     description: str
     schema: dict[str, Any]
     annotations: ToolAnnotations
-    call: Callable[[EnaTools, dict[str, Any]], _Result]
+    call: Callable[[EnaTools, dict[str, Any]], _Result | Awaitable[_Result]]
 
 
 TOOLS: tuple[ToolSpec, ...] = (
@@ -957,6 +1052,33 @@ TOOLS: tuple[ToolSpec, ...] = (
         _MONEY,
         lambda t, a: t.propose_event_advance(a["event_id"]),
     ),
+    ToolSpec(
+        "create_pay_link",
+        "A JCC card payment link (and QR code) for a customer to pay the business, for the"
+        " amount and description the owner gives. Money in: it moves no money; the sale is"
+        " booked when JCC confirms the card payment.",
+        {
+            "type": "object",
+            "properties": {
+                "amount_cents": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_PAY_LINK_CENTS,
+                    "description": "The amount in euro cents, as the owner gave it (€15 is 1500)",
+                },
+                "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": MAX_PAY_LINK_DESCRIPTION,
+                    "description": "What the customer pays for, as the owner said it",
+                },
+            },
+            "required": ["amount_cents", "description"],
+            "additionalProperties": False,
+        },
+        ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False),
+        lambda t, a: t.create_pay_link(a["amount_cents"], a["description"]),
+    ),
 )
 
 
@@ -965,12 +1087,15 @@ def allowed_tools() -> list[str]:
     return [f"mcp__{SERVER_NAME}__{spec.name}" for spec in TOOLS]
 
 
-def call_tool(tools: EnaTools, name: str, arguments: dict[str, Any]) -> str:
+async def call_tool(tools: EnaTools, name: str, arguments: dict[str, Any]) -> str:
     """Run one tool and return its result as JSON text (what the agent reads)."""
     spec = next((spec for spec in TOOLS if spec.name == name), None)
     if spec is None:
         raise ToolError(f"no tool {name!r}")
-    return spec.call(tools, arguments).model_dump_json()
+    result = spec.call(tools, arguments)
+    if inspect.isawaitable(result):
+        result = await result
+    return result.model_dump_json()
 
 
 def build_server(tools: EnaTools) -> McpSdkServerConfig:
@@ -978,7 +1103,7 @@ def build_server(tools: EnaTools) -> McpSdkServerConfig:
 
     def handler(name: str) -> Handler:
         async def run(arguments: dict[str, Any]) -> dict[str, Any]:
-            text = call_tool(tools, name, arguments)
+            text = await call_tool(tools, name, arguments)
             return {"content": [{"type": "text", "text": text}]}
 
         return run

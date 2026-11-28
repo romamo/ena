@@ -250,9 +250,9 @@ class Payer:
 
     async def run(self, prompt: str) -> AsyncIterator[str]:
         if prompt == "account":
-            call_tool(self.tools, "get_bank_account", {})
+            await call_tool(self.tools, "get_bank_account", {})
         else:
-            call_tool(self.tools, "pay_invoice", {"invoice_id": prompt.removeprefix("pay ")})
+            await call_tool(self.tools, "pay_invoice", {"invoice_id": prompt.removeprefix("pay ")})
         yield "Done."
 
 

@@ -52,7 +52,7 @@ class ScriptedAgent:
 
     async def run(self, prompt: str) -> AsyncIterator[str]:
         self.prompts.append(prompt)
-        balance = json.loads(call_tool(self.tools, "get_balance", {}))
+        balance = json.loads(await call_tool(self.tools, "get_balance", {}))
         yield f"Your balance is {balance['balance']} on {balance['as_of']}."
 
 
@@ -179,7 +179,7 @@ class Payer:
     tools: EnaTools
 
     async def run(self, prompt: str) -> AsyncIterator[str]:
-        call_tool(self.tools, "pay_invoice", {"invoice_id": prompt})
+        await call_tool(self.tools, "pay_invoice", {"invoice_id": prompt})
         yield "Done."
 
 

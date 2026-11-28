@@ -29,6 +29,7 @@ from ena.models import (
     Card,
     Offer,
     OfferKind,
+    PayLink,
     Receipt,
 )
 
@@ -67,9 +68,10 @@ def normalize(question: str) -> str:
 def cacheable(reply: CachedReply) -> bool:
     """Whether a reply may be cached: it shows no approval, no bank consent, no receipt,
     and no offer that writes a receipt (the loan, the event advance), since a replay
-    writes none; nor the live bank account, which a replay would show stale."""
+    writes none; nor the live bank account, which a replay would show stale; nor a pay
+    link, since each one is a new JCC order."""
     return not any(
-        isinstance(card, (ApprovalRequest, BankConsent, Receipt, BankAccount))
+        isinstance(card, (ApprovalRequest, BankConsent, Receipt, BankAccount, PayLink))
         or (isinstance(card, Offer) and card.kind is not OfferKind.RESERVE)
         for card in reply.cards
     )

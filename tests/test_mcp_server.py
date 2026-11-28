@@ -30,6 +30,8 @@ MONTH = synthetic_month()
 DAIRY, FLOUR = MONTH.invoices
 SUPPLIERS = {DAIRY.supplier_name, FLOUR.supplier_name}
 NOW = dt.datetime(2026, 11, 16, 9, 0, tzinfo=dt.UTC)
+MONEY_IN = "create_pay_link"
+"""The one tool that takes an amount: money in, which moves nothing and pays no one."""
 
 
 @dataclass
@@ -122,13 +124,16 @@ def test_money_tools_take_ids_and_no_tool_approves_or_changes_the_limit() -> Non
     assert set(pay.schema["properties"]) == {"invoice_id"}
     assert pay.schema["additionalProperties"] is False
     for spec in TOOLS:
-        assert not {"amount", "amount_cents", "iban", "payee"} & set(spec.schema["properties"])
+        properties = set(spec.schema["properties"])
+        assert not {"iban", "payee"} & properties
+        if spec.name != MONEY_IN:
+            assert not {"amount", "amount_cents"} & properties
     assert allowed_tools() == [f"mcp__ena__{n}" for n in [spec.name for spec in TOOLS]]
 
 
 def test_results_carry_no_iban() -> None:
     s = setup(FLOUR.issue_date)
-    text = call_tool(s.tools, "list_unpaid_invoices", {})
+    text = asyncio.run(call_tool(s.tools, "list_unpaid_invoices", {}))
     assert FLOUR.supplier_iban not in text
     assert DAIRY.supplier_iban not in text
     assert json.loads(text)["total"] == "€1,420.00"
@@ -459,11 +464,10 @@ def test_the_replay_moves_the_day() -> None:
 
 def test_call_tool_and_the_server() -> None:
     s = setup(DAIRY.issue_date)
-    assert json.loads(call_tool(s.tools, "pay_invoice", {"invoice_id": DAIRY.id}))["status"] == (
-        "paid"
-    )
+    paid = asyncio.run(call_tool(s.tools, "pay_invoice", {"invoice_id": DAIRY.id}))
+    assert json.loads(paid)["status"] == "paid"
     with pytest.raises(ToolError, match="no tool"):
-        call_tool(s.tools, "approve", {})
+        asyncio.run(call_tool(s.tools, "approve", {}))
     server = build_server(s.tools)
     assert server["type"] == "sdk"
     assert server["name"] == SERVER_NAME
