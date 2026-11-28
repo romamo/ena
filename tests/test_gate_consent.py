@@ -8,7 +8,16 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from ena.gate import REPAY_PREFIX, Executed, Gate, GateError, Initiated, PaymentResult
+from ena.gate import (
+    REPAY_PREFIX,
+    BankOutcomeUnknown,
+    BankUnavailable,
+    Executed,
+    Gate,
+    GateError,
+    Initiated,
+    PaymentResult,
+)
 from ena.models import Actor, ApprovalRequest, BankConsent, Business, Receipt
 from ena.store import Store
 
@@ -32,13 +41,23 @@ class FakeConsentBank:
     simulated: bool = False
     initiated: list[tuple[str, int, str]] = field(default_factory=list)
     executed: list[tuple[str, str]] = field(default_factory=list)
+    initiate_error: Exception | None = None
+    """Raised once by the next initiate."""
+    execute_error: Exception | None = None
+    """Raised once by the next execute."""
 
     def initiate(self, action: str, amount_cents: int, ref: str) -> Initiated:
         self.initiated.append((action, amount_cents, ref))
+        error, self.initiate_error = self.initiate_error, None
+        if error is not None:
+            raise error
         return Initiated(f"pay-{ref}", f"https://bank.test/authorize?paymentid=pay-{ref}")
 
     def execute(self, payment_id: str, code: str) -> Executed:
         self.executed.append((payment_id, code))
+        error, self.execute_error = self.execute_error, None
+        if error is not None:
+            raise error
         return Executed(self.status, "REF-1")
 
 
@@ -184,3 +203,67 @@ def test_a_bank_without_consent_refuses_the_confirmation_routes(store: Store) ->
     assert isinstance(gate.request_payment("pay_invoice", 18_000, "inv-1"), Receipt)
     with pytest.raises(GateError, match="without a confirmation"):
         gate.confirm("code-1")
+
+
+def test_a_failed_initiate_records_nothing_and_can_be_asked_again(
+    gate: Gate, bank: FakeConsentBank, store: Store
+) -> None:
+    bank.initiate_error = BankUnavailable("503 from the bank")
+
+    with pytest.raises(GateError, match=r"could not start the payment \(503 from the bank\)"):
+        gate.request_payment("pay_invoice", 18_000, "inv-1")
+
+    assert not store.has_attempt("inv-1")
+    assert store.open_consent() is None
+    assert isinstance(gate.request_payment("pay_invoice", 18_000, "inv-1"), BankConsent)
+
+
+def test_a_failed_initiate_on_approve_leaves_the_approval_pending(
+    gate: Gate, bank: FakeConsentBank, store: Store
+) -> None:
+    request = gate.request_payment("pay_invoice", 124_000, "inv-2")
+    assert isinstance(request, ApprovalRequest)
+    bank.initiate_error = BankUnavailable("503 from the bank")
+
+    with pytest.raises(GateError, match="could not start the payment"):
+        gate.approve(request.id)
+
+    assert store.pending_approval_for("inv-2") == request
+    assert not store.has_attempt("inv-2")
+    assert isinstance(gate.approve(request.id), BankConsent)
+
+
+def test_a_refused_code_keeps_the_confirmation_open(gate: Gate, bank: FakeConsentBank) -> None:
+    consent = gate.request_payment("pay_invoice", 18_000, "inv-1")
+    assert isinstance(consent, BankConsent)
+    bank.execute_error = BankUnavailable("invalid_grant")
+
+    with pytest.raises(GateError, match="nothing was paid; open the bank's screen again"):
+        gate.confirm("code-1")
+
+    assert gate.consent(consent.id) == consent
+    assert gate.confirm("code-2").result == PaymentResult.PAID
+
+
+def test_an_execute_that_breaks_off_writes_an_unknown_receipt_never_failed(
+    gate: Gate, bank: FakeConsentBank, store: Store
+) -> None:
+    consent = gate.request_payment("pay_invoice", 18_000, "inv-1")
+    assert isinstance(consent, BankConsent)
+    bank.execute_error = BankOutcomeUnknown("connection reset")
+
+    receipt = gate.confirm("code-1")
+
+    assert (receipt.result, receipt.sandbox, receipt.simulated) == (
+        PaymentResult.UNKNOWN,
+        False,
+        False,
+    )
+    assert "answer to the payment was lost (connection reset): check the bank" in (
+        receipt.explanation
+    )
+    assert store.open_consent() is None
+    with pytest.raises(GateError, match="already settled"):
+        gate.cancel(consent.id)
+    assert gate.request_payment("pay_invoice", 18_000, "inv-1") == receipt
+    assert len(bank.initiated) == 1

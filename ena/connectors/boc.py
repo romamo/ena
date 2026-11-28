@@ -48,11 +48,26 @@ class BocSettings(BaseSettings):
     """Whom `ena-serve --bank boc` pays every invoice to: the synthetic suppliers have no
     sandbox account, so the sample payee stands in for them."""
     creditor_bank: str = SAMPLE_CREDITOR_BANK
+    """The payee's BIC, or empty for a payee at Bank of Cyprus."""
 
     @field_validator("subscription_id", "account_id", mode="before")
     @classmethod
     def _empty_is_none(cls, value: object) -> object:
         return None if value == "" else value
+
+    @field_validator("account_id", "creditor_account")
+    @classmethod
+    def _account(cls, value: str | None) -> str | None:
+        if value is not None:
+            AccountId(value)
+        return value
+
+    @field_validator("creditor_bank")
+    @classmethod
+    def _bic(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?", value):
+            raise ValueError(f"not a BIC: {value!r}")
+        return value
 
 
 # Value objects

@@ -218,16 +218,17 @@ class Store:
 
     # Bank consents
 
-    def add_consent(self, consent: BankConsent, payment_id: str, why: str) -> None:
-        """Keep an open consent; fails when one is open already or its ref has one."""
-        if not payment_id:
-            raise StoreError(f"consent {consent.id} needs the bank's payment id")
+    def add_consent(
+        self, consent: BankConsent, payment_id: str, why: str, attempt_at: dt.datetime
+    ) -> None:
+        """Keep an open consent and record the attempt to pay its ref, in one transaction;
+        fails when one is open already or its ref has one."""
         with self._db:
             self._db.execute(
-                "INSERT INTO consents (id, ref, payment_id, why, open, body)"
-                " VALUES (?, ?, ?, ?, 1, ?)",
-                (consent.id, consent.ref, payment_id, why, consent.model_dump_json()),
+                "INSERT INTO attempts (ref, at) VALUES (?, ?)",
+                (consent.ref, attempt_at.isoformat()),
             )
+            self._insert_consent(StoredConsent(consent, payment_id, why))
 
     def consent(self, consent_id: str) -> StoredConsent | None:
         row = self._db.execute(
@@ -289,8 +290,15 @@ class Store:
         ).fetchone()
         return None if row is None else ApprovalRequest.model_validate_json(row[0])
 
-    def record_approval(self, approved: ApprovalRequest, ref: str, attempt_at: dt.datetime) -> None:
-        """Approve a pending request and record the attempt to pay it, in one transaction.
+    def record_approval(
+        self,
+        approved: ApprovalRequest,
+        ref: str,
+        attempt_at: dt.datetime,
+        consent: StoredConsent | None = None,
+    ) -> None:
+        """Approve a pending request and record the attempt to pay it, in one transaction,
+        with the bank consent that waits for the owner when the bank asks for one.
 
         A crash can leave the request pending, or approved with its attempt on record,
         never approved with no attempt (a ref that could be neither paid nor retried).
@@ -302,6 +310,20 @@ class Store:
             self._db.execute(
                 "INSERT INTO attempts (ref, at) VALUES (?, ?)", (ref, attempt_at.isoformat())
             )
+            if consent is not None:
+                if consent.consent.ref != ref:
+                    raise StoreError(f"consent {consent.consent.id} is not for {ref}")
+                self._insert_consent(consent)
+
+    def _insert_consent(self, stored: StoredConsent) -> None:
+        """Inside the caller's transaction: keep an open consent."""
+        if not stored.payment_id:
+            raise StoreError(f"consent {stored.consent.id} needs the bank's payment id")
+        consent = stored.consent
+        self._db.execute(
+            "INSERT INTO consents (id, ref, payment_id, why, open, body) VALUES (?, ?, ?, ?, 1, ?)",
+            (consent.id, consent.ref, stored.payment_id, stored.why, consent.model_dump_json()),
+        )
 
     def record_decline(self, declined: ApprovalRequest, receipt: Receipt) -> None:
         """Decline a pending request and write its receipt, in one transaction."""

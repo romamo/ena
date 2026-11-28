@@ -184,6 +184,22 @@ describe("App", () => {
     opened.mockRestore();
   });
 
+  it("keeps waiting, with Cancel, when one check of the bank confirmation fails", async () => {
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
+    const fetcher = answering({
+      "/chat": () => streaming(sse(CONSENT, { kind: "done", text: "x", unconfirmed: false, cached: false })),
+      "/consents/consent-syn-inv-0002": () => Response.json({ detail: "the API is restarting" }, { status: 503 }),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.click(screen.getByRole("button", { name: "Pay the flour invoice" }));
+    const consent = await screen.findByRole("article", { name: "Bank confirmation" });
+    fireEvent.click(within(consent).getByRole("button", { name: "Confirm in Bank of Cyprus" }));
+
+    expect(await within(consent).findByText(/last check failed: the API is restarting/, {}, { timeout: 4000 })).toBeTruthy();
+    expect(within(consent).getByRole("button", { name: "Cancel" })).toBeTruthy();
+    opened.mockRestore();
+  });
+
   it("cancels a waiting bank confirmation", async () => {
     const fetcher = answering({
       "/chat": () => streaming(sse(CONSENT, { kind: "done", text: "x", unconfirmed: false, cached: false })),

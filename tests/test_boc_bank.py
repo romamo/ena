@@ -47,10 +47,14 @@ class Sandbox:
 
     status: str = "CPLT"
     requests: list[httpx.Request] = field(default_factory=list)
+    down: set[str] = field(default_factory=set)
+    """Path endings answered with 500."""
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         path = request.url.path
+        if any(path.endswith(end) for end in self.down):
+            return httpx.Response(500, json={"error": "sandbox down"})
         if str(request.url) == SIGN:
             return httpx.Response(200, json=_fixture("payment_sign"))
         if path.endswith("/oauth2/token"):
@@ -357,3 +361,60 @@ def test_the_agent_reads_the_live_sandbox_account_as_its_own_card(http: TestClie
 
     assert card["card_kind"] == "account"
     assert (card["card"]["account_id"], card["card"]["available_cents"]) == (ACCOUNT, 825_050)
+
+
+def test_an_initiate_the_sandbox_refuses_leaves_the_approval_to_tap_again(
+    http: TestClient, sandbox: Sandbox
+) -> None:
+    approval = _card(sse(http.post("/chat", json={"text": f"pay {FLOUR.id}"}).text))
+    sandbox.down = {"/v1/payments/initiate"}
+
+    refused = http.post(f"/approvals/{approval['card']['id']}/approve")
+
+    assert refused.status_code == 409
+    assert "could not start the payment" in refused.json()["detail"]
+    sandbox.down = set()
+    consent = http.post(f"/approvals/{approval['card']['id']}/approve").json()
+    assert consent["card_kind"] == "consent"
+
+
+def test_a_code_the_sandbox_refuses_keeps_the_confirmation_open(
+    http: TestClient, sandbox: Sandbox
+) -> None:
+    consent = _card(sse(http.post("/chat", json={"text": f"pay {DAIRY.id}"}).text))
+    sandbox.down = {"/oauth2/token"}
+
+    page = http.get("/boc/consent", params={"code": "code-1"})
+
+    assert page.status_code == 409
+    assert "open the bank" in page.text
+    assert not any(r.url.path.endswith("/execute") for r in sandbox.requests)
+    assert http.get(f"/consents/{consent['card']['id']}").json()["card_kind"] == "consent"
+
+
+def test_an_execute_that_breaks_off_says_check_the_bank_and_cancel_cannot_fail_it(
+    http: TestClient, sandbox: Sandbox
+) -> None:
+    consent = _card(sse(http.post("/chat", json={"text": f"pay {DAIRY.id}"}).text))
+    consent_id = consent["card"]["id"]
+    sandbox.down = {"/execute"}
+
+    page = http.get("/boc/consent", params={"code": "code-1"})
+
+    assert page.status_code == 200
+    assert "<h1>Check the bank</h1>" in page.text
+    receipt = http.get(f"/consents/{consent_id}").json()["card"]
+    assert receipt["result"] == "unknown"
+    assert http.post(f"/consents/{consent_id}/cancel").status_code == 409
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"creditor_account": "not an account"}, "not a bank account id"),
+        ({"creditor_bank": "citi"}, "not a BIC"),
+    ],
+)
+def test_a_malformed_payee_is_refused(changes: dict[str, Any], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        boc_settings(**changes)

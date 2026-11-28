@@ -9,6 +9,10 @@ and executes the payment, `CPLT` when completed (docs/boc-notes.md §3).
 Every payment goes from `BOC_ACCOUNT_ID` to the sample payee (`BOC_CREDITOR_ACCOUNT`): the
 synthetic suppliers have no sandbox account, so the invoice's own IBAN is never sent.
 
+Errors become the gate's: an initiate or a code exchange that fails is `BankUnavailable`
+(nothing was paid), an execute call that breaks off or answers something unreadable is
+`BankOutcomeUnknown` (the payment may have gone out).
+
 `account` reads the same account's balance and its statement since `STATEMENT_SINCE`: a
 sample customer's account, shown beside the synthetic month, never mixed into it.
 """
@@ -20,6 +24,9 @@ from collections.abc import Callable
 from decimal import Decimal
 from typing import Literal
 from urllib.parse import urlsplit
+
+import httpx
+from pydantic import ValidationError
 
 from ena.connectors.boc import (
     Account,
@@ -34,7 +41,7 @@ from ena.connectors.boc import (
     SubscriptionId,
     Transaction,
 )
-from ena.gate import Executed, Initiated
+from ena.gate import BankOutcomeUnknown, BankUnavailable, Executed, Initiated
 from ena.models import BankAccount, BankLine
 
 STATEMENT_SINCE = dt.date(2020, 1, 1)
@@ -42,6 +49,10 @@ STATEMENT_SINCE = dt.date(2020, 1, 1)
 window of recent days finds none."""
 MAX_LINES = 10
 """The most statement lines the account card shows, newest first."""
+
+_BANK_ERRORS = (BocError, httpx.HTTPError, ValidationError)
+"""What a bocAPI call raises when the bank refuses, can't be reached, or answers in a shape
+the client doesn't read."""
 
 CONSENT_PATH = "/boc/consent"
 """Ena's route the owner's browser comes back to after confirming a payment in BoC."""
@@ -93,10 +104,13 @@ class BocBank:
             amount=Money(amount_cents),
             details=f"Ena {ref}",
         )
-        signed = self._client.sign_payment(order)
-        initiated = self._client.initiate_payment(self._client.client_token(), signed)
+        try:
+            signed = self._client.sign_payment(order)
+            initiated = self._client.initiate_payment(self._client.client_token(), signed)
+        except _BANK_ERRORS as error:
+            raise BankUnavailable(str(error)) from error
         if not initiated.auth_code_needed:
-            raise BocError(
+            raise BankUnavailable(
                 f"payment {initiated.payment.payment_id} needs no consent: Ena only knows the"
                 " consented flow"
             )
@@ -104,8 +118,14 @@ class BocBank:
         return Initiated(str(payment_id), self._client.payment_consent_url(payment_id))
 
     def execute(self, payment_id: str, code: str) -> Executed:
-        user_token = self._client.user_token(AuthCode(code))  # the code is short-lived
-        result = self._client.execute_payment(user_token, PaymentId(payment_id))
+        try:
+            user_token = self._client.user_token(AuthCode(code))  # the code is short-lived
+        except _BANK_ERRORS as error:
+            raise BankUnavailable(str(error)) from error
+        try:
+            result = self._client.execute_payment(user_token, PaymentId(payment_id))
+        except _BANK_ERRORS as error:
+            raise BankOutcomeUnknown(str(error)) from error
         return Executed(result.code, result.ref_number)
 
     def account(self) -> BankAccount:

@@ -182,8 +182,9 @@ def create_app(
                     return _page(400, "No confirmation", "The bank sent no code back.")
             except GateError as refused:
                 return _page(409, "Nothing to confirm", str(refused))
+            titles = {PaymentResult.PAID: "Paid", PaymentResult.UNKNOWN: "Check the bank"}
+            title = titles.get(PaymentResult(receipt.result), "Not paid")
             paid = receipt.result == PaymentResult.PAID
-            title = "Paid" if paid else "Not paid"
             return _page(200, title, receipt.explanation, close=paid)
 
     if dashboard is not None:

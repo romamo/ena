@@ -22,6 +22,13 @@ bank's redirect after the confirmation brings a one-time code to `confirm`, whic
 the payment and writes the receipt; a refusal there, or the owner's `cancel`, writes a
 failed one. The redirect names no payment, so at most one consent is open at a time: a
 second payment waits until the first is confirmed or cancelled.
+
+Nothing is paid before `execute`, so a consent bank's attempt is recorded together with
+its consent, after `initiate` succeeded: an `initiate` that fails (`BankUnavailable`)
+records nothing, and the owner can ask again. In `confirm`, a code the bank won't exchange
+(`BankUnavailable`) leaves the consent open, while an `execute` that breaks off
+(`BankOutcomeUnknown`) closes it with a receipt whose result is unknown: it is to be
+checked at the bank, and the ref is never paid again.
 """
 
 from __future__ import annotations
@@ -52,6 +59,16 @@ class PaymentResult(StrEnum):
     PAID = "paid"
     FAILED = "failed"
     DECLINED = "declined"
+    UNKNOWN = "unknown"
+    """The bank call broke off after the payment was sent: check the bank."""
+
+
+class BankUnavailable(RuntimeError):
+    """A consent bank failed before anything could be paid: nothing went out."""
+
+
+class BankOutcomeUnknown(RuntimeError):
+    """A consent bank's execute broke off: whether it paid is unknown."""
 
 
 class GateError(RuntimeError):
@@ -99,11 +116,16 @@ class ConsentBank(Protocol):
     """
 
     def initiate(self, action: str, amount_cents: int, ref: str) -> Initiated:
-        """Initiate the payment; nothing is paid until `execute`."""
+        """Initiate the payment; nothing is paid until `execute`. Raises `BankUnavailable`
+        when the bank can't initiate it."""
         ...
 
     def execute(self, payment_id: str, code: str) -> Executed:
-        """Execute an initiated payment with the code the owner's confirmation returned."""
+        """Execute an initiated payment with the code the owner's confirmation returned.
+
+        Raises `BankUnavailable` when it fails before the payment is sent (the code is
+        refused), `BankOutcomeUnknown` when the execute call itself breaks off.
+        """
         ...
 
 
@@ -169,15 +191,16 @@ class Gate:
             return pending
         limit = self._business.auto_pay_limit_cents
         if amount_cents <= limit:
-            self._refuse_second_consent()
+            why = f"{_euros(amount_cents)} is within the {_euros(limit)} auto-pay limit"
+            if isinstance(self._bank, ConsentBank):
+                self._refuse_second_consent()
+                consent, payment_id = self._initiate(
+                    self._bank, Actor.ENA, action, amount_cents, ref
+                )
+                self._store.add_consent(consent, payment_id, why, self._now())
+                return consent
             self._store.add_attempt(ref, self._now())
-            return self._pay(
-                Actor.ENA,
-                action,
-                amount_cents,
-                ref,
-                f"{_euros(amount_cents)} is within the {_euros(limit)} auto-pay limit",
-            )
+            return self._pay(Actor.ENA, action, amount_cents, ref, why)
         request = ApprovalRequest(
             id=f"approval-{ref}",
             action=action,
@@ -195,11 +218,16 @@ class Gate:
         `ConsentBank`, return the consent that waits for the owner's confirmation)."""
         request, ref, now = self._decide(approval_id, ApprovalStatus.APPROVED)
         self._refuse_real_money_for_simulated(ref)
-        self._refuse_second_consent()
+        why = "Approved by the owner"
+        if isinstance(self._bank, ConsentBank):
+            self._refuse_second_consent()
+            consent, payment_id = self._initiate(
+                self._bank, Actor.OWNER, request.action, request.amount_cents, ref
+            )
+            self._store.record_approval(request, ref, now, StoredConsent(consent, payment_id, why))
+            return consent
         self._store.record_approval(request, ref, now)
-        return self._pay(
-            Actor.OWNER, request.action, request.amount_cents, ref, "Approved by the owner"
-        )
+        return self._pay(Actor.OWNER, request.action, request.amount_cents, ref, why)
 
     def decline(self, approval_id: str) -> Receipt:
         """The owner's decline: pay nothing and write a declined receipt."""
@@ -224,7 +252,20 @@ class Gate:
             raise ValueError("the bank's confirmation code is empty")
         bank = self._consent_bank()
         stored = self._open_consent()
-        executed = bank.execute(stored.payment_id, code)
+        try:
+            executed = bank.execute(stored.payment_id, code)
+        except BankUnavailable as error:
+            raise GateError(
+                f"the bank's confirmation could not be used ({error}): nothing was paid; open the"
+                " bank's screen again from the card"
+            ) from error
+        except BankOutcomeUnknown as error:
+            return self._close(
+                stored,
+                PaymentResult.UNKNOWN,
+                f"{stored.why}; the bank's answer to the payment was lost ({error}): check the"
+                " bank, Ena will not pay it again",
+            )
         consent = stored.consent
         amount = _euros(consent.amount_cents)
         if executed.status == COMPLETED:
@@ -282,6 +323,28 @@ class Gate:
             raise GateError(f"no bank confirmation {consent_id!r}")
         receipt = self._store.receipt_for(stored.consent.ref)
         return stored.consent if receipt is None else receipt
+
+    def _initiate(
+        self, bank: ConsentBank, actor: Actor, action: str, amount_cents: int, ref: str
+    ) -> tuple[BankConsent, str]:
+        """Have the bank initiate the payment; nothing is recorded, so a failure can be
+        asked again."""
+        try:
+            initiated = bank.initiate(action, amount_cents, ref)
+        except BankUnavailable as error:
+            raise GateError(
+                f"the bank could not start the payment ({error}): nothing was paid, ask again"
+            ) from error
+        consent = BankConsent(
+            id=f"consent-{ref}",
+            action=action,
+            amount_cents=amount_cents,
+            ref=ref,
+            actor=actor,
+            consent_url=initiated.consent_url,
+            created_at=self._now(),
+        )
+        return consent, initiated.payment_id
 
     def _consent_bank(self) -> ConsentBank:
         if not isinstance(self._bank, ConsentBank):
@@ -348,24 +411,11 @@ class Gate:
         )
         return decided, stored.ref, now
 
-    def _pay(
-        self, actor: Actor, action: str, amount_cents: int, ref: str, why: str
-    ) -> Receipt | BankConsent:
-        """Call the bank and write the receipt, or with a `ConsentBank` keep the consent
-        that waits for the owner; the caller has recorded the attempt."""
+    def _pay(self, actor: Actor, action: str, amount_cents: int, ref: str, why: str) -> Receipt:
+        """Call a bank that pays at once and write the receipt; the caller has recorded the
+        attempt."""
         if isinstance(self._bank, ConsentBank):
-            initiated = self._bank.initiate(action, amount_cents, ref)
-            consent = BankConsent(
-                id=f"consent-{ref}",
-                action=action,
-                amount_cents=amount_cents,
-                ref=ref,
-                actor=actor,
-                consent_url=initiated.consent_url,
-                created_at=self._now(),
-            )
-            self._store.add_consent(consent, initiated.payment_id, why)
-            return consent
+            raise TypeError("a consent bank pays through _initiate and confirm")
         status = self._bank.pay(action, amount_cents, ref)
         simulated = False
         if status == COMPLETED:

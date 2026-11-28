@@ -385,7 +385,7 @@ class ReceiptsResult(_Result):
     """Newest first."""
 
 
-PayStatus = Literal["paid", "failed", "declined", "awaiting_approval", "awaiting_bank"]
+PayStatus = Literal["paid", "failed", "declined", "unknown", "awaiting_approval", "awaiting_bank"]
 
 
 class PayResult(_Result):
@@ -619,6 +619,7 @@ class EnaTools:
             PaymentResult.PAID: "paid",
             PaymentResult.FAILED: "failed",
             PaymentResult.DECLINED: "declined",
+            PaymentResult.UNKNOWN: "unknown",
         }
         status = statuses[PaymentResult(outcome.result)]
         return PayResult(

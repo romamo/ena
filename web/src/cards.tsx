@@ -165,7 +165,7 @@ function receiptLabel(card: ReceiptCard): string {
 
 type Confirm =
   | { state: "open" }
-  | { state: "waiting" }
+  | { state: "waiting"; problem?: string }
   | { state: "settled"; receipt: CardEvent }
   | { state: "failed"; message: string };
 
@@ -181,8 +181,9 @@ function Consent({ card }: { card: ConsentCard }) {
           if (answer.card_kind === "receipt") setConfirm({ state: "settled", receipt: answer });
         },
         (error: unknown) => {
-          const message = error instanceof ApiError ? error.message : String(error);
-          setConfirm({ state: "failed", message });
+          // One failed check doesn't settle the payment: keep waiting, and keep Cancel
+          const problem = error instanceof ApiError ? error.message : String(error);
+          setConfirm({ state: "waiting", problem });
         },
       );
     }, POLL_MS);
@@ -226,7 +227,10 @@ function Consent({ card }: { card: ConsentCard }) {
         </div>
       ) : null}
       {confirm.state === "waiting" ? (
-        <p className="muted small">Waiting for the bank's confirmation…</p>
+        <p className="muted small">
+          Waiting for the bank's confirmation…
+          {confirm.problem === undefined ? "" : ` (last check failed: ${confirm.problem})`}
+        </p>
       ) : null}
       {confirm.state === "failed" ? (
         <p className="error" role="alert">
