@@ -200,6 +200,44 @@ Worked example (synthetic): €8,000 wedding, 25% deposit (€2,000), costs 60% 
 - Agent runtime: the plan says swappable. **Proposal:** Claude through the Claude Agent SDK, which connects to MCP servers directly; Roman decides.
 - Background work (new invoice arrives, replay clock ticks) runs the same loop without a chat message and posts its cards into the chat.
 
+### Onboarding (proposal, 2026-11-28)
+
+**For the hackathon there is no onboarding screen.** The loop is what the jury scores, and the 5 to 6 pitch minutes go to the approval card and its receipt. Before the demo we activate the bocAPI subscription with `ena-boc subscribe` and `activate`, and Jinius and JCC are connected. On stage, one line covers it: "The owner connected the account and set a €500 limit in 5 minutes; Ena read 3 months of history." The chat opens on the first summary card (step 5), which shows the limit.
+
+The flow below is the product's set-up, kept as the answer when the jury asks how an owner starts. It is the "5 min" of plan.md's owner journey and runs in the same chat, one card per step:
+
+| Step | Owner does | Ena does | In the demo |
+|---|---|---|---|
+| 1. Bank account | Taps "Connect Bank of Cyprus", logs in to 1Bank, picks the account, consents | Creates the bocAPI subscription, exchanges the `code`, activates it (`ACTV`, valid 180 days), as `ena-boc subscribe` and `activate` do today | Done before the demo with `ena-boc` |
+| 2. Limit | Answers "Below which amount may I pay without asking you?" | Stores `autoPayLimit`; the agent has no tool to change it later (§5), only this owner step | Seeded at €500 (placeholder until the interviews) |
+| 3. Supplier invoices | Nothing | Uses the business's Jinius client (one client per legal entity, `client_credentials`) | Pre-connected |
+| 4. Card sales | Nothing | Uses the business's JCC merchant and webhook | Pre-connected |
+| 5. First summary | Reads one card | Reads 3 months of history: suppliers and their rhythm, the 8-week forecast | The chat's first card, from the seed |
+
+- Steps 3 and 4 are set up by the business once outside the chat (Jinius and JCC credentials are not something an owner types into a chat); the onboarding shows them as connected
+- The limit is the only setting. Changing it later is the same owner step in the chat, never an agent tool
+
+### Notifications (proposal, 2026-11-28)
+
+The chat is where everything lands, but a card only reaches an owner who has the page open. A notification brings them back to the card.
+
+| Event | Push? | Lands in the chat as |
+|---|---|---|
+| Invoice above the limit | Yes: "Pay the flour supplier €1,240? Above your €500 limit" | Approval card |
+| Payment failed or declined by the bank | Yes | Failed receipt |
+| Lean week ahead | Yes, once per lean week | Forecast card with the reserve or loan offer |
+| Invoice paid within the limit | No | Receipt card |
+| Card sale booked | No | Nothing; counted in the month-end summary |
+
+- **For the hackathon:** the chat page is a PWA with Web Push (or, at minimum, the Notification API while the tab is open). Tapping the notification opens the approval card. This is the pitch's opening scene on the phone
+- **After the hackathon:** a messenger the owners already use (Viber and WhatsApp are common in Cyprus), with Approve as a button that opens the bank's confirmation, or a push from BoC's own app if Ena ships as a feature of the business account
+- Push only what needs the owner. Silence below the limit is the product: "about 6 minutes a month"
+- A notification carries no account numbers or balances on the lock screen: the supplier, the amount and the question only
+
+### Consent per payment and "pays on its own"
+
+bocAPI asks for the 1Bank redirect and login on every payment (VERIFIED, [boc-notes.md](boc-notes.md) §3). So in the sandbox even a €180 payment below the limit stops at the bank's screen; "Ena pays on its own below the limit" cannot run unattended today. On stage we say it plainly: today the bank confirms each payment; in the product a standing mandate within the owner's limit replaces it (§18).
+
 ---
 
 ## 9. Key flows
