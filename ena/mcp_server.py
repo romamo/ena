@@ -335,6 +335,9 @@ class Turn:
     receipts: list[Receipt] = field(default_factory=list)
     """The receipts the gate returned for a payment asked this turn (`pay_invoice`), which
     alone confirm a "paid" claim; receipts a tool only read (`list_receipts`) are not here."""
+    read: list[Receipt] = field(default_factory=list)
+    """The receipts `list_receipts` read this turn: a paid one backs only a sentence that
+    cites its id, a payment made earlier (`ena/agent.py`)."""
 
 
 class EnaTools:
@@ -433,6 +436,7 @@ class EnaTools:
         if type(limit) is not int or not 1 <= limit <= MAX_RECEIPTS:
             raise ToolError(f"limit must be an integer from 1 to {MAX_RECEIPTS}, got {limit!r}")
         receipts = tuple(reversed(self._store.receipts()[-limit:]))
+        self._turn.read.extend(receipts)
         return ReceiptsResult(receipts=receipts)
 
     # Money and offers
