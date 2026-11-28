@@ -358,6 +358,8 @@ export async function getDashboard<R extends keyof DashboardRoutes>(
 // Jinius (ena/connectors/jinius.py): the invoices sent to the business, read on a tap
 
 export type JiniusInvoice = {
+  /** The Jinius document id the owner's taps name */
+  id: string;
   number: string;
   supplier: string;
   amount_cents: number;
@@ -398,6 +400,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 function isJiniusInvoice(value: unknown): value is JiniusInvoice {
   return (
     isRecord(value) &&
+    typeof value.id === "string" &&
     typeof value.number === "string" &&
     typeof value.supplier === "string" &&
     Number.isInteger(value.amount_cents) &&
@@ -474,4 +477,24 @@ async function card(response: Response, choice: string): Promise<CardEvent> {
     throw new ApiError(`not a card event: ${JSON.stringify(body)}`);
   }
   return body as CardEvent;
+}
+
+export type JiniusTap = "approve" | "mark-paid";
+
+/** The owner's tap on a Jinius invoice; answers with the invoice as Jinius holds it afterwards. */
+export async function tapJinius(
+  invoiceId: string,
+  action: JiniusTap,
+  fetcher: typeof fetch = fetch,
+): Promise<JiniusInvoice> {
+  const response = await fetcher(`/jinius/invoices/${encodeURIComponent(invoiceId)}/${action}`, {
+    method: "POST",
+  });
+  const body: unknown = await response.json();
+  if (!response.ok) {
+    const detail = isRecord(body) && typeof body.detail === "string" ? body.detail : "";
+    throw new ApiError(detail || `Jinius answered ${response.status}`);
+  }
+  if (!isJiniusInvoice(body)) throw new ApiError(`not a Jinius invoice: ${JSON.stringify(body)}`);
+  return body;
 }

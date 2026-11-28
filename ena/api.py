@@ -44,6 +44,12 @@ when Jinius can't be reached, and the answer says which. It reads only: nothing 
 approved, paid or booked. Without the Jinius client in `.env` it is answered 503, and any
 other Jinius refusal 502 with its detail.
 
+`POST /jinius/invoices/{id}/approve` and `POST /jinius/invoices/{id}/mark-paid` are the
+owner's taps on a Jinius invoice: they approve it, or report it paid in full today, in the
+Jinius integration environment, and answer with the invoice as Jinius holds it afterwards.
+No tool reaches them. Mark paid on an invoice that isn't approved is refused with 409; an
+id that isn't a Jinius document id with 404.
+
 `POST /jcc/callback` takes JCC's form-encoded webhook (docs/jcc-notes.md §0, §7 step 4):
 
 1. The checksum is verified first; a missing or wrong one is refused with 403, books nothing
@@ -60,7 +66,8 @@ The callback secret never appears in an answer.
 from __future__ import annotations
 
 import html
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from typing import Annotated, Literal
 from urllib.parse import parse_qsl
 
@@ -81,7 +88,15 @@ from ena.connectors.jcc import (
     confirm_deposit,
     verify_checksum,
 )
-from ena.connectors.jinius import JiniusError, JiniusNotConfigured, PayableFeed
+from ena.connectors.jinius import (
+    DocumentId,
+    JiniusDesk,
+    JiniusError,
+    JiniusNotConfigured,
+    NotApproved,
+    PayableFeed,
+    PayableInvoice,
+)
 from ena.dashboard import Credit, Dashboard, ForecastView, Overview, Receipts
 from ena.gate import Gate, GateError, PaymentResult
 from ena.mcp_server import ToolError
@@ -125,15 +140,15 @@ def create_app(
     gate: Gate | None = None,
     advances: Advances | None = None,
     dashboard: Dashboard | None = None,
-    jinius: Callable[[], PayableFeed] | None = None,
+    jinius: JiniusDesk | None = None,
     procurement: Procurement | None = None,
 ) -> FastAPI:
     """The API, booking into `store` and confirming deposits through `jcc`.
 
     With `chat` it serves `POST /chat`; with `gate`, the owner's approve and decline; with
     `advances`, the owner's accept and decline of an event advance; with
-    `dashboard`, the dashboard's reads; with `jinius`, the invoices read from Jinius; with
-    `procurement`, the owner's award of a quotation.
+    `dashboard`, the dashboard's reads; with `jinius`, the owner's read and taps on Jinius;
+    with `procurement`, the owner's award of a quotation.
     """
     if not callback_secret.get_secret_value():
         # An empty key would accept any callback signed with HMAC-SHA256 keyed with b""
@@ -233,17 +248,24 @@ def create_app(
                 raise HTTPException(status_code=409, detail=str(error)) from error
 
     if jinius is not None:
-        read_jinius = jinius
+        desk = jinius
+
+        # Plain defs: the Jinius client is synchronous, so FastAPI runs them off the loop
 
         @app.get("/jinius/invoices")
         def jinius_invoices() -> PayableFeed:
-            # A plain def: the Jinius client is synchronous, so FastAPI runs it off the loop
-            try:
-                return read_jinius()
-            except JiniusNotConfigured as error:
-                raise HTTPException(status_code=503, detail=str(error)) from error
-            except JiniusError as error:
-                raise HTTPException(status_code=502, detail=str(error)) from error
+            with _jinius_refusals():
+                return desk.read()
+
+        @app.post("/jinius/invoices/{document_id}/approve")
+        def jinius_approve(document_id: str) -> PayableInvoice:
+            with _jinius_refusals():
+                return desk.approve(_document_id(document_id))
+
+        @app.post("/jinius/invoices/{document_id}/mark-paid")
+        def jinius_mark_paid(document_id: str) -> PayableInvoice:
+            with _jinius_refusals():
+                return desk.mark_paid(_document_id(document_id))
 
     if advances is not None:
         owner_advances = advances
@@ -324,6 +346,26 @@ def _page(status: int, title: str, message: str, *, close: bool = False) -> HTML
         f"{script}</body></html>"
     )
     return HTMLResponse(body, status_code=status)
+
+
+@contextmanager
+def _jinius_refusals() -> Iterator[None]:
+    """A Jinius refusal as the page reads it: 503 not configured, 409 not approved, else 502."""
+    try:
+        yield
+    except JiniusNotConfigured as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except NotApproved as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except JiniusError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+def _document_id(value: str) -> DocumentId:
+    try:
+        return DocumentId(value)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 async def _form_fields(request: Request) -> dict[str, str]:
