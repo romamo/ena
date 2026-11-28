@@ -499,6 +499,7 @@ def test_the_store_has_no_api_to_change_or_delete_a_receipt_or_an_attempt() -> N
         "card_sales",
         "add_approval",
         "approval",
+        "pending_approvals",
         "pending_approval_for",
         "record_approval",
         "record_decline",

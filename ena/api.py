@@ -17,6 +17,11 @@ event advance's offer card (`ena/advances.py`). They answer with the receipt car
 unknown or already decided offer, or a second accepted advance for an event, is refused
 with 409. No tool can reach these either.
 
+`GET /dashboard/overview`, `/dashboard/receipts`, `/dashboard/forecast` and
+`/dashboard/credit` are the owner's dashboard (`ena/dashboard.py`): read only, they pay,
+approve and write nothing, and add nothing to a chat turn. A day with no forecast is
+answered 409.
+
 `POST /jcc/callback` takes JCC's form-encoded webhook (docs/jcc-notes.md §0, §7 step 4):
 
 1. The checksum is verified first; a missing or wrong one is refused with 403, books nothing
@@ -52,7 +57,9 @@ from ena.connectors.jcc import (
     confirm_deposit,
     verify_checksum,
 )
+from ena.dashboard import Credit, Dashboard, ForecastView, Overview, Receipts
 from ena.gate import Gate, GateError
+from ena.mcp_server import ToolError
 from ena.store import Store
 
 FORM = "application/x-www-form-urlencoded"
@@ -84,11 +91,13 @@ def create_app(
     chat: Chat | None = None,
     gate: Gate | None = None,
     advances: Advances | None = None,
+    dashboard: Dashboard | None = None,
 ) -> FastAPI:
     """The API, booking into `store` and confirming deposits through `jcc`.
 
     With `chat` it serves `POST /chat`; with `gate`, the owner's approve and decline; with
-    `advances`, the owner's accept and decline of an event advance.
+    `advances`, the owner's accept and decline of an event advance; with
+    `dashboard`, the dashboard's reads.
     """
     if not callback_secret.get_secret_value():
         # An empty key would accept any callback signed with HMAC-SHA256 keyed with b""
@@ -118,6 +127,34 @@ def create_app(
             try:
                 return card_event(owner_gate.decline(approval_id))
             except GateError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+    if dashboard is not None:
+        board = dashboard
+
+        @app.get("/dashboard/overview")
+        async def overview() -> Overview:
+            try:
+                return board.overview()
+            except ToolError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+        @app.get("/dashboard/receipts")
+        async def receipts() -> Receipts:
+            return board.receipts()
+
+        @app.get("/dashboard/forecast")
+        async def forecast() -> ForecastView:
+            try:
+                return board.forecast()
+            except ToolError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+        @app.get("/dashboard/credit")
+        async def credit() -> Credit:
+            try:
+                return board.credit()
+            except ToolError as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
 
     if advances is not None:

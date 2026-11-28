@@ -46,6 +46,7 @@ from ena.agent import AgentError, AgentRunner, AgentSettings, Chat, ClaudeAgent
 from ena.api import create_app
 from ena.cache import ReplyCache
 from ena.connectors.jcc import JccClient, JccSettings, JccUnavailable
+from ena.dashboard import Dashboard
 from ena.gate import COMPLETED, Gate, PaymentBank
 from ena.mcp_server import EnaTools, Ledger, ReplayDay, build_server
 from ena.seed import FIRST_DAY, LAST_DAY, LEAN_WEEK, SEED, synthetic_month
@@ -180,7 +181,8 @@ def build(
         log.warning(SIMULATED_PAYMENTS)
     gate = Gate(month.business, store, StandInBank() if bank is None else bank, _now)
     today = ReplayDay(settings.day)
-    tools = EnaTools(Ledger(month, store, today), store, gate, _now)
+    ledger = Ledger(month, store, today)
+    tools = EnaTools(ledger, store, gate, _now)
     agent = (claude_runner(settings) if runner is None else runner)(tools)
     chat = Chat(tools, agent, today, ReplyCache(SEED, settings.cache))
 
@@ -205,6 +207,7 @@ def build(
         chat=chat,
         gate=gate,
         advances=Advances(store, gate, month.events, _now),
+        dashboard=Dashboard(ledger, store),
     )
     if settings.jcc is None:
         _refuse_callbacks(app)

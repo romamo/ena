@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, sendChat, type CardEvent, type ChatEvent } from "./api";
-import { Card, FetchContext } from "./cards";
+import { Card, FetchContext, OpenBoard, type BoardTab } from "./cards";
+import { Dashboard } from "./Dashboard";
 import { rich } from "./rich";
 
 // The demo questions of tests/chat_questions.json the chips offer
@@ -48,6 +49,8 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<"chat" | "dashboard">("chat");
+  const [tab, setTab] = useState<BoardTab>("overview");
   const nextId = useRef(0);
   const end = useRef<HTMLDivElement>(null);
 
@@ -88,6 +91,17 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
     }
   }
 
+  function openBoard(on: BoardTab) {
+    setTab(on);
+    setView("dashboard");
+  }
+
+  /** A question asked from the dashboard: back to the chat, sent as the owner's. */
+  function ask(question: string) {
+    setView("chat");
+    void send(question);
+  }
+
   function submit(event: FormEvent) {
     event.preventDefault();
     void send(draft);
@@ -101,13 +115,24 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
             <h1>Ena</h1>
             <p className="muted small">Your back-office assistant</p>
           </div>
-          <span className="label">demo</span>
+          <div className="top-actions">
+            <span className="label">demo</span>
+            <button
+              type="button"
+              className="switch"
+              onClick={() => setView(view === "chat" ? "dashboard" : "chat")}
+            >
+              {view === "chat" ? "Dashboard" : "Back to chat"}
+            </button>
+          </div>
         </header>
         <p className="banner" role="note">
           Synthetic demo: the bakery, its bank data and invoices are made up, and payments are
           simulated. No money moves.
         </p>
-        <main className="messages" aria-live="polite">
+        <Dashboard open={view === "dashboard"} tab={tab} onTab={setTab} onAsk={ask} busy={busy} />
+        <OpenBoard value={openBoard}>
+        <main className="messages" aria-live="polite" hidden={view !== "chat"}>
           {messages.length === 0 ? (
             <p className="muted empty">Ask about your cash, invoices and payments.</p>
           ) : null}
@@ -140,7 +165,8 @@ export function App({ fetcher }: { fetcher: typeof fetch }) {
           )}
           <div ref={end} />
         </main>
-        <footer className="composer">
+        </OpenBoard>
+        <footer className="composer" hidden={view !== "chat"}>
           <div className="chips" aria-label="Suggested questions">
             {SUGGESTIONS.map((suggestion) => (
               <button

@@ -171,6 +171,63 @@ export async function sendChat(
   for (const { name, data } of parser.finish()) onEvent(chatEvent(name, data));
 }
 
+// The dashboard (ena/dashboard.py): read only, every figure computed by the API
+
+export type Overview = {
+  as_of: IsoDate;
+  business: string;
+  synthetic: boolean;
+  limit_cents: number;
+  balance_cents: number;
+  pending: ApprovalCard[];
+  paid_on_its_own: number;
+  paid_on_its_own_cents: number;
+  stepped_in: number;
+  paid_out_cents: number;
+  unpaid_invoices: number;
+  unpaid_cents: number;
+  lean_week: IsoDate | null;
+  lean_week_closing_cents: number | null;
+};
+
+export type Receipts = { receipts: ReceiptCard[] };
+
+export type Credit = {
+  verdict: "no_lean_week" | "reserve_covers" | "loan_needed";
+  lean_week: IsoDate | null;
+  lean_week_closing_cents: number | null;
+  threshold_cents: number;
+  gap_cents: number | null;
+  instalment_cents: number;
+  instalment_due: IsoDate;
+  reserve: OfferCard | null;
+  loan: OfferCard | null;
+};
+
+export type ForecastView = { forecast: ForecastCard; threshold_cents: number };
+
+export type DashboardRoutes = {
+  overview: Overview;
+  receipts: Receipts;
+  forecast: ForecastView;
+  credit: Credit;
+};
+
+/** One of the dashboard's reads. */
+export async function getDashboard<R extends keyof DashboardRoutes>(
+  route: R,
+  fetcher: typeof fetch = fetch,
+): Promise<DashboardRoutes[R]> {
+  const response = await fetcher(`/dashboard/${route}`);
+  const body: unknown = await response.json();
+  if (!response.ok) {
+    const detail = isRecord(body) && typeof body.detail === "string" ? body.detail : "";
+    throw new ApiError(detail || `the dashboard answered ${response.status}`);
+  }
+  if (!isRecord(body)) throw new ApiError(`not a dashboard answer: ${JSON.stringify(body)}`);
+  return body as DashboardRoutes[R];
+}
+
 /** The owner's tap on an approval card; answers with the receipt card. */
 export async function decide(
   approvalId: string,

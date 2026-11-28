@@ -14,6 +14,32 @@ import { day, dayTime, euro } from "./format";
 /** The fetch the owner's taps go through; the tests give their own. */
 export const FetchContext = createContext<typeof fetch>((input, init) => fetch(input, init));
 
+/** The dashboard's tab for each kind of card. */
+export type BoardTab = "overview" | "receipts" | "forecast" | "credit";
+
+const CARD_TAB: Record<CardEvent["card_kind"], BoardTab> = {
+  approval: "overview",
+  receipt: "receipts",
+  forecast: "forecast",
+  offer: "credit",
+};
+
+/** Opens the dashboard on a tab; given only in the chat, so a card there links to it. */
+export const OpenBoard = createContext<((tab: BoardTab) => void) | null>(null);
+
+/** Called once the owner has approved or declined, so a view can read again. */
+export const OnDecided = createContext<() => void>(() => {});
+
+function BoardLink({ kind }: { kind: CardEvent["card_kind"] }) {
+  const open = useContext(OpenBoard);
+  if (open === null) return null;
+  return (
+    <button type="button" className="link" onClick={() => open(CARD_TAB[kind])}>
+      See in dashboard →
+    </button>
+  );
+}
+
 export function Card({ event }: { event: CardEvent }) {
   switch (event.card_kind) {
     case "approval":
@@ -39,6 +65,7 @@ type Tap =
 
 function Approval({ card }: { card: ApprovalCard }) {
   const fetcher = useContext(FetchContext);
+  const decided = useContext(OnDecided);
   const [tap, setTap] = useState<Tap>({ state: "open" });
   const pending = card.status === "pending";
 
@@ -46,6 +73,7 @@ function Approval({ card }: { card: ApprovalCard }) {
     setTap({ state: "sending", choice });
     try {
       setTap({ state: "decided", receipt: await decide(card.id, choice, fetcher) });
+      decided();
     } catch (error) {
       const message = error instanceof ApiError ? error.message : String(error);
       setTap({ state: "failed", message });
@@ -86,6 +114,7 @@ function Approval({ card }: { card: ApprovalCard }) {
         </p>
       ) : null}
       {tap.state === "decided" ? <Card event={tap.receipt} /> : null}
+      <BoardLink kind="approval" />
     </article>
   );
 }
@@ -110,6 +139,7 @@ function Receipt({ card }: { card: ReceiptCard }) {
       <p className="muted small">
         By {card.actor === "ena" ? "Ena" : "you"}, {dayTime(card.at)} · {card.id}
       </p>
+      <BoardLink kind="receipt" />
     </article>
   );
 }
@@ -140,6 +170,7 @@ function Forecast({ card }: { card: ForecastCard }) {
         })}
       </ol>
       <p className="muted">{card.reason}</p>
+      <BoardLink kind="forecast" />
     </article>
   );
 }
@@ -214,6 +245,7 @@ function Offer({ card }: { card: OfferCard }) {
         </p>
       ) : null}
       {tap.state === "decided" ? <Card event={tap.receipt} /> : null}
+      <BoardLink kind="offer" />
     </article>
   );
 }
