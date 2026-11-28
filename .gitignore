@@ -7,3 +7,4 @@ __pycache__/
 .idea/
 tmp/
 node_modules/
+!.env.example
