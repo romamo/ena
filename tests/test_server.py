@@ -374,3 +374,10 @@ def test_a_variable_outside_the_given_environment_is_not_read(tmp_path: Path) ->
     loaded = load_settings(parser().parse_args(["--memory"]), {}, env)
     assert (loaded.jinius, loaded.jcc) == (None, None)
     assert loaded.agent.model == "claude-opus-5-5"
+
+
+def test_a_variable_naming_a_settings_init_argument_is_dropped(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("ENA__CLI_PARSE_ARGS=true\nENA_MODEL=claude-test\n", encoding="utf-8")
+    loaded = load_settings(parser().parse_args(["--memory"]), {}, env)
+    assert loaded.agent.model == "claude-test"

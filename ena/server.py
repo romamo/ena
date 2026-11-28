@@ -129,14 +129,18 @@ def _only_init(
 
 
 def env_values(prefix: str, env_file: Path | None, environ: Mapping[str, str]) -> dict[str, str]:
-    """The `prefix` section from `env_file`, then `environ` over it, keyed by field name."""
+    """The `prefix` section from `env_file`, then `environ` over it, keyed by field name.
+
+    A name that would start with `_` is dropped: it would reach one of pydantic-settings'
+    own init arguments (`ENA__CLI_PARSE_ARGS` as `_cli_parse_args`), never a field."""
     found = {} if env_file is None or not env_file.is_file() else dotenv_values(env_file)
     merged = {k: v for k, v in found.items() if v is not None} | dict(environ)
-    return {
+    fields = {
         name[len(prefix) :].lower(): value
         for name, value in merged.items()
         if name.upper().startswith(prefix)
     }
+    return {name: value for name, value in fields.items() if not name.startswith("_")}
 
 
 def from_values[S: BaseSettings](cls: type[S], values: Mapping[str, str]) -> S:
