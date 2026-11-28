@@ -101,6 +101,68 @@ export type PayLinkCard = {
   sandbox: boolean;
 };
 
+// Procurement (ena/procurement.py): requests for quotation, the comparison, the order
+
+export type ItemLine = { description: string; quantity: number; unit: string };
+
+export type QuoteLine = ItemLine & { unit_price_cents: number; total_cents: number };
+
+export type QuoteRequest = {
+  id: string;
+  title: string;
+  items: ItemLine[];
+  suppliers: string[];
+  needed_by: IsoDate;
+  reply_by: IsoDate;
+  sent_on: IsoDate;
+  /** Sent outside Jinius, which has no API for requests for quotation. */
+  simulated: boolean;
+};
+
+export type Quotation = {
+  id: string;
+  request_id: string;
+  supplier_name: string;
+  lines: QuoteLine[];
+  total_cents: number;
+  delivery_date: IsoDate;
+  valid_until: IsoDate;
+  received_on: IsoDate;
+};
+
+export type RankedQuote = {
+  quotation: Quotation;
+  rank: number;
+  complete: boolean;
+  on_time: boolean;
+  valid: boolean;
+  issues: string[];
+};
+
+/** A request's quotations, ranked; the owner awards one with a tap. */
+export type QuotesCard = {
+  request: QuoteRequest;
+  quotes: RankedQuote[];
+  recommended: string | null;
+  awarded: string | null;
+  order_id: string | null;
+  reason: string;
+};
+
+/** The order the owner issued for an awarded quotation; sent outside Jinius. */
+export type OrderCard = {
+  id: string;
+  request_id: string;
+  quotation_id: string;
+  supplier_name: string;
+  lines: QuoteLine[];
+  total_cents: number;
+  deliver_by: IsoDate;
+  issued_at: IsoDateTime;
+  actor: "ena" | "owner";
+  simulated: boolean;
+};
+
 export type CardEvent =
   | { kind: "card"; card_kind: "approval"; card: ApprovalCard }
   | { kind: "card"; card_kind: "consent"; card: ConsentCard }
@@ -108,7 +170,9 @@ export type CardEvent =
   | { kind: "card"; card_kind: "receipt"; card: ReceiptCard }
   | { kind: "card"; card_kind: "forecast"; card: ForecastCard }
   | { kind: "card"; card_kind: "offer"; card: OfferCard }
-  | { kind: "card"; card_kind: "pay_link"; card: PayLinkCard };
+  | { kind: "card"; card_kind: "pay_link"; card: PayLinkCard }
+  | { kind: "card"; card_kind: "quotes"; card: QuotesCard }
+  | { kind: "card"; card_kind: "order"; card: OrderCard };
 
 export type ChatEvent =
   | { kind: "text"; text: string }
@@ -125,6 +189,8 @@ const CARD_KINDS = new Set([
   "offer",
   "account",
   "pay_link",
+  "quotes",
+  "order",
 ]);
 
 export class ApiError extends Error {}
@@ -358,6 +424,14 @@ export async function takeOffer(
   fetcher: typeof fetch = fetch,
 ): Promise<CardEvent> {
   return tap(`/offers/${encodeURIComponent(offerId)}/${choice}`, choice, fetcher);
+}
+
+/** The owner awards a quotation; answers with the purchase order's card. */
+export async function awardQuote(
+  quotationId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<CardEvent> {
+  return tap(`/quotes/${encodeURIComponent(quotationId)}/award`, "award", fetcher);
 }
 
 /** Whether payments go through the Bank of Cyprus sandbox (true) or the stand-in (false). */

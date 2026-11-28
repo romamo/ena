@@ -128,5 +128,19 @@
     "figures": [],
     "cards": [],
     "dont_know": true
+  },
+  {
+    "id": "compare-quotes",
+    "en": "Which supplier should I order the wedding supplies from?",
+    "el": "Από ποιον προμηθευτή να παραγγείλω τα υλικά για τον γάμο;",
+    "day": 16,
+    "paid_before": [],
+    "tools": [
+      {"tool": "list_quote_requests", "arguments": {}},
+      {"tool": "compare_quotes", "arguments": {"request_id": "syn-rfq-0002"}}
+    ],
+    "figures": ["€605.00", "€17.00"],
+    "cards": ["quotes"],
+    "dont_know": false
   }
 ]

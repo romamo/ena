@@ -10,7 +10,9 @@ import {
   DECLINED,
   FORECAST,
   LOAN,
+  ORDER,
   PAY_LINK,
+  QUOTES,
   RECEIPT,
   SANDBOX_RECEIPT,
   sse,
@@ -125,6 +127,55 @@ describe("App", () => {
     const page = within(card).getByRole("link", { name: "Open the payment page" });
     expect(page.getAttribute("href")).toBe(PAY_LINK.card_kind === "pay_link" ? PAY_LINK.card.url : "");
     expect(within(card).getByText(/Nothing has moved yet/).textContent).toContain("Only a test card pays it.");
+  });
+
+  it("compares quotations and orders from the one the owner taps", async () => {
+    const fetcher = answering({
+      "/chat": () => streaming(sse(QUOTES, { kind: "done", text: "x", unconfirmed: false, cached: false })),
+      "/quotes/syn-quote-0006/award": () => Response.json(ORDER),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Which supplier should I order the wedding supplies from?" }),
+    );
+
+    const quotes = await screen.findByRole("article", { name: "Quotations" });
+    const suppliers = within(quotes)
+      .getAllByRole("listitem")
+      .map((item) => item.querySelector(".quote-head span")?.textContent);
+    expect(suppliers).toEqual([
+      "Limassol Cash & Carry (synthetic)",
+      "Kyrenia Dairy (synthetic)",
+      "Paphos Wholesale (synthetic)",
+    ]);
+    expect(within(quotes).getByText(/Ena recommends/)).toBeTruthy();
+    expect(within(quotes).getByText(/delivers 2026-12-16, needed by 2026-12-14/)).toBeTruthy();
+    // Every quotation that still holds can be ordered, the late one too: the owner decides
+    expect(within(quotes).getAllByRole("button", { name: /^Order from/ })).toHaveLength(3);
+
+    fireEvent.click(within(quotes).getByRole("button", { name: "Order from Limassol Cash & Carry (synthetic)" }));
+
+    const order = await within(quotes).findByRole("article", { name: "Purchase order" });
+    expect(within(order).getByText("€605.00")).toBeTruthy();
+    expect(within(order).getByText("sent outside Jinius, simulated")).toBeTruthy();
+    expect(within(quotes).queryByRole("button", { name: /^Order from/ })).toBeNull();
+    expect(fetcher).toHaveBeenCalledWith("/quotes/syn-quote-0006/award", { method: "POST" });
+  });
+
+  it("shows the refusal when a quotation can't be ordered", async () => {
+    const fetcher = answering({
+      "/chat": () => streaming(sse(QUOTES, { kind: "done", text: "x", unconfirmed: false, cached: false })),
+      "/quotes/syn-quote-0004/award": () =>
+        Response.json({ detail: "already ordered from Limassol" }, { status: 409 }),
+    });
+    render(<App fetcher={fetcher} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Which supplier should I order the wedding supplies from?" }),
+    );
+    const quotes = await screen.findByRole("article", { name: "Quotations" });
+    fireEvent.click(within(quotes).getByRole("button", { name: "Order from Kyrenia Dairy (synthetic)" }));
+
+    expect((await within(quotes).findByRole("alert")).textContent).toBe("already ordered from Limassol");
   });
 
   it("labels a receipt simulated only when the API says so", async () => {

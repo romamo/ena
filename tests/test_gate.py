@@ -517,6 +517,10 @@ def test_the_store_has_no_api_to_change_or_delete_a_receipt_or_an_attempt() -> N
         "close_consent",
         "keep_bank_account",
         "bank_account",
+        "add_quote_request",
+        "quote_requests",
+        "add_purchase_order",
+        "purchase_orders",
     }
 
 

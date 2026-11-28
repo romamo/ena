@@ -143,6 +143,142 @@ class SupplierInvoice(_Entity):
     due_date: IsoDate
     status: InvoiceStatus
     jinius_id: Id
+    purchase_order_id: Id | None = None
+    """The purchase order the invoice bills, when it names one: on Jinius the supplier
+    attaches the order as a supporting document (docs/jinius-notes.md §9)."""
+
+
+# Procurement (docs/jinius-notes.md §9, ena/procurement.py)
+
+Quantity = Annotated[int, Field(strict=True, gt=0)]
+Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class ItemLine(_Entity):
+    """What the business asks for: a description, a quantity and its unit."""
+
+    description: Text
+    quantity: Quantity
+    unit: Text
+
+
+class QuoteRequest(_Entity):
+    """A request for quotation sent to suppliers.
+
+    Jinius has no API for requests for quotation (§9): its Tenders take a document in the
+    portal. So a request is drafted here and sent outside Jinius: `simulated` says so.
+    """
+
+    id: Id
+    title: Text
+    items: Annotated[tuple[ItemLine, ...], Field(min_length=1)]
+    suppliers: Annotated[tuple[Text, ...], Field(min_length=1)]
+    needed_by: IsoDate
+    reply_by: IsoDate
+    sent_on: IsoDate
+    simulated: Flag
+
+    @model_validator(mode="after")
+    def _dates_in_order(self) -> Self:
+        if not self.sent_on <= self.reply_by <= self.needed_by:
+            raise ValueError(
+                f"expected sent_on {self.sent_on} <= reply_by {self.reply_by}"
+                f" <= needed_by {self.needed_by}"
+            )
+        if len({item.description.casefold() for item in self.items}) != len(self.items):
+            raise ValueError("a request names each item once")
+        return self
+
+
+class QuoteLine(_Entity):
+    description: Text
+    quantity: Quantity
+    unit: Text
+    unit_price_cents: NonNegativeCents
+    total_cents: NonNegativeCents
+
+    @model_validator(mode="after")
+    def _total_adds_up(self) -> Self:
+        if self.total_cents != self.quantity * self.unit_price_cents:
+            raise ValueError(
+                f"total_cents {self.total_cents} != quantity {self.quantity}"
+                f" x unit_price_cents {self.unit_price_cents}"
+            )
+        return self
+
+
+class Quotation(_Entity):
+    """A supplier's answer to a request: its prices, its delivery date, how long it holds."""
+
+    id: Id
+    request_id: Id
+    supplier_name: Text
+    lines: Annotated[tuple[QuoteLine, ...], Field(min_length=1)]
+    total_cents: NonNegativeCents
+    delivery_date: IsoDate
+    valid_until: IsoDate
+    received_on: IsoDate
+
+    @model_validator(mode="after")
+    def _total_adds_up(self) -> Self:
+        expected = sum(line.total_cents for line in self.lines)
+        if self.total_cents != expected:
+            raise ValueError(f"total_cents {self.total_cents} != the lines' sum {expected}")
+        return self
+
+
+class RankedQuote(_Entity):
+    """A quotation as the comparison judged it (ena/rules/procurement.py)."""
+
+    quotation: Quotation
+    rank: Annotated[int, Field(strict=True, ge=1)]
+    complete: Flag
+    """Every item asked for, at least the quantity asked."""
+    on_time: Flag
+    """Delivered by the request's `needed_by`."""
+    valid: Flag
+    """Still holds today."""
+    issues: tuple[str, ...]
+    """Why it is not complete, on time or valid; empty when it is all three."""
+
+
+class QuoteComparison(_Entity):
+    """The quotations of one request, ranked: eligible ones first, cheapest first."""
+
+    request: QuoteRequest
+    quotes: tuple[RankedQuote, ...]
+    recommended: Id | None
+    """The cheapest eligible quotation's id, or None when none is eligible."""
+    awarded: Id | None
+    """The quotation the owner awarded, once a purchase order is issued for it."""
+    order_id: Id | None
+    reason: str
+
+
+class PurchaseOrder(_Entity):
+    """The order for an awarded quotation; the owner issues it with a tap.
+
+    Jinius has no purchase orders (§9): the order goes to the supplier outside Jinius
+    (`simulated`), and the supplier's invoice on Jinius names it.
+    """
+
+    id: Id
+    request_id: Id
+    quotation_id: Id
+    supplier_name: Text
+    lines: Annotated[tuple[QuoteLine, ...], Field(min_length=1)]
+    total_cents: NonNegativeCents
+    deliver_by: IsoDate
+    issued_at: AwareDatetime
+    actor: Actor
+    simulated: Flag
+
+    @model_validator(mode="after")
+    def _total_adds_up(self) -> Self:
+        expected = sum(line.total_cents for line in self.lines)
+        if self.total_cents != expected:
+            raise ValueError(f"total_cents {self.total_cents} != the lines' sum {expected}")
+        return self
 
 
 class CardSale(_Entity):
@@ -349,7 +485,17 @@ class PayLink(_Entity):
         return self
 
 
-Card = ApprovalRequest | BankConsent | Receipt | Forecast | Offer | BankAccount | PayLink
+Card = (
+    ApprovalRequest
+    | BankConsent
+    | Receipt
+    | Forecast
+    | Offer
+    | BankAccount
+    | PayLink
+    | QuoteComparison
+    | PurchaseOrder
+)
 """What a chat message can show as a card (§8)."""
 
 

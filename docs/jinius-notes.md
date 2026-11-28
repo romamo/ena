@@ -195,3 +195,49 @@ Seeding invoices can be done in the portal by hand if the submit endpoint costs 
 8. Are there webhooks or event callbacks, or should we poll? Any rate limits?
 9. Can one user hold two legal entities (buyer and supplier) on the integration environment?
 10. For the "best use of Jinius APIs" prize, would paying through Remittance Management count for more than marking paid after a bocAPI payment?
+11. Is there an API for Tenders Management (create and issue an RFT, read bids, award), and what does `/v3/marketplace/*` serve? Where on an invoice should a buyer's purchase order number go so the API returns it?
+
+## 9. Procurement on Jinius, and what Ena does itself (2026-11-28)
+
+Read from the public Help Center, the pricing page and Bank of Cyprus's announcement; no portal call. The Swagger file (section 0) is not in the repo and was not re-read: if it has tender or order paths, they override "no API" below.
+
+**Tenders Management (RFTs), VERIFIED.** A document-based tender, run in the portal ([how it works](https://help.jinius.com.cy/hc/en-us/articles/13382437500689), [create](https://help.jinius.com.cy/hc/en-us/articles/13399502120977), [award](https://help.jinius.com.cy/hc/en-us/articles/13540266453265)):
+
+- The buyer creates an RFT in 4 steps:
+  1. Details and the RFT file
+  2. Supporting documents
+  3. Open (any Jinius user bids) or closed (invited suppliers only)
+  4. Preview and issue
+- After issuing, the buyer may extend the deadline or withdraw the RFT (Withdrawn while not awarded)
+- Suppliers ask questions before the deadline; the buyer publishes an answer (asker anonymous) or rejects it
+- A bid is files only: no price or line fields. Bids are sealed until the deadline (the buyer sees a count), then listed
+- Awarding:
+  - The buyer selects one or more bids, writes a message and awards
+  - The RFT and the selected bids become Awarded
+  - There is no comparison view, and no documented "not awarded" status
+- Plans: creating and issuing RFTs needs Premium (€50), Enterprise or Enterprise Max ([pricing](https://business.jinius.com.cy/pricing-plans/)). Every plan may bid; E-commerce is limited to 5 RFTs a year
+- Bank of Cyprus runs its own tenders on Jinius since 17 March 2025 ([announcement](https://www.bankofcyprus.com/en-gb/group/news-archive/Jiniusannouncement/))
+
+**Not on Jinius (NOT FOUND in any public source):**
+
+- **Requests for quotation and structured quotations:** the only quotation is a tender's bid file
+- **Purchase orders:** a PO appears only as a supporting document an invoice may attach (up to 15; [source](https://help.jinius.com.cy/hc/en-us/articles/53297796566033)). No order object or status, nothing created from an award, and no invoice linked to an order
+- **An API for tenders, bids or orders:** the API covers invoices, credit notes and remittances ([source](https://help.jinius.com.cy/hc/en-us/articles/53299661177617)). What `/v3/marketplace/*` (section 0) serves is UNKNOWN
+
+The Jinius marketplace (jinius.com.cy) is a consumer shop on Mirakl paid by card, not business procurement.
+
+**So Ena runs procurement itself (`ena/procurement.py`) and uses Jinius where it can.** In short, Ena drafts the requests and the owner issues the orders; Jinius carries only the invoice and its payment.
+
+| Step | Where | How |
+|---|---|---|
+| Request for quotation | Ena, sent outside Jinius (simulated) | `request_quotes` drafts it on the owner's word: items, suppliers, needed by, replies by. For a formal tender the owner issues an RFT in the Jinius portal |
+| Quotations | Ena | Suppliers' replies as records (the seed's, for the demo). A Jinius bid would be read here once an API exists |
+| Comparison | Ena (`ena/rules/procurement.py`) | Complete, on time, still valid, then the cheapest; the card recommends one |
+| Award and purchase order | Ena, the owner's tap only | `POST /quotes/{id}/award` issues the order and the owner's receipt; one order per request. The order goes to the supplier outside Jinius (simulated) |
+| Invoice | Jinius | The supplier's invoice names the order (`purchase_order_id`; on Jinius, the PO attached as a supporting document) |
+| Match and pay | Ena, then the gate | `pay_invoice` holds an invoice whose supplier or amount differs from its order; a match goes through the gate as before (approve, pay or mark paid on Jinius) |
+
+**ASSUMED:**
+
+- A supplier's Jinius invoice carries the order number Ena issued, in its supporting documents or its reference
+- Until a live invoice shows where that number sits, the synthetic month sets `purchase_order_id` on the flour invoice

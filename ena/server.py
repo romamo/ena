@@ -70,6 +70,7 @@ from ena.connectors.jinius import (
 from ena.dashboard import Dashboard
 from ena.gate import COMPLETED, ConsentBank, Gate, PaymentBank
 from ena.mcp_server import BankReader, EnaTools, Ledger, ReplayDay, build_server
+from ena.procurement import Procurement
 from ena.seed import FIRST_DAY, LAST_DAY, LEAN_WEEK, SEED, synthetic_month
 from ena.store import Store
 
@@ -333,6 +334,7 @@ def build(
         advances=Advances(store, gate, month.events, _now),
         dashboard=Dashboard(ledger, store),
         jinius=read_jinius,
+        procurement=Procurement(ledger, store, _now),
     )
     if settings.jcc is None:
         _refuse_callbacks(app)

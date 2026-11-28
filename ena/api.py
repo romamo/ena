@@ -28,6 +28,11 @@ event advance's offer card (`ena/advances.py`). They answer with the receipt car
 unknown or already decided offer, or a second accepted advance for an event, is refused
 with 409. No tool can reach these either.
 
+`POST /quotes/{id}/award` is the owner's tap on a quotation in the comparison card
+(`ena/procurement.py`). It issues the purchase order, writes the owner's receipt and
+answers with the order card; an unknown or expired quotation, or a request already
+ordered, is refused with 409. No tool can reach it either.
+
 `GET /dashboard/overview`, `/dashboard/receipts`, `/dashboard/forecast` and
 `/dashboard/credit` are the owner's dashboard (`ena/dashboard.py`): read only, they pay,
 approve and write nothing, and add nothing to a chat turn. A day with no forecast is
@@ -80,6 +85,7 @@ from ena.connectors.jinius import JiniusError, JiniusNotConfigured, PayableFeed
 from ena.dashboard import Credit, Dashboard, ForecastView, Overview, Receipts
 from ena.gate import Gate, GateError, PaymentResult
 from ena.mcp_server import ToolError
+from ena.procurement import Procurement, ProcurementError
 from ena.store import Store
 
 FORM = "application/x-www-form-urlencoded"
@@ -120,12 +126,14 @@ def create_app(
     advances: Advances | None = None,
     dashboard: Dashboard | None = None,
     jinius: Callable[[], PayableFeed] | None = None,
+    procurement: Procurement | None = None,
 ) -> FastAPI:
     """The API, booking into `store` and confirming deposits through `jcc`.
 
     With `chat` it serves `POST /chat`; with `gate`, the owner's approve and decline; with
     `advances`, the owner's accept and decline of an event advance; with
-    `dashboard`, the dashboard's reads; with `jinius`, the invoices read from Jinius.
+    `dashboard`, the dashboard's reads; with `jinius`, the invoices read from Jinius; with
+    `procurement`, the owner's award of a quotation.
     """
     if not callback_secret.get_secret_value():
         # An empty key would accept any callback signed with HMAC-SHA256 keyed with b""
@@ -252,6 +260,16 @@ def create_app(
             try:
                 return card_event(owner_advances.decline(offer_id))
             except AdvanceError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+    if procurement is not None:
+        owner_procurement = procurement
+
+        @app.post("/quotes/{quotation_id}/award")
+        async def award_quote(quotation_id: str) -> CardEvent:
+            try:
+                return card_event(owner_procurement.award(quotation_id))
+            except ProcurementError as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.post("/jcc/callback")
