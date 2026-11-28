@@ -324,6 +324,44 @@ def test_a_gate_payment_already_on_the_statement_is_counted_once() -> None:
     assert not {tx.amount_cents for tx in books.unmatched_payments} & {-DAIRY.amount_cents}
 
 
+def test_a_bank_line_for_one_invoice_leaves_the_suppliers_other_invoice_to_the_gate() -> None:
+    second = DAIRY.model_copy(
+        update={
+            "id": "syn-inv-0003",
+            "jinius_id": "syn-jinius-0003",
+            "issue_date": dt.date(2026, 11, 5),
+            "due_date": dt.date(2026, 11, 12),
+        }
+    )
+    bank_line = type(MONTH.transactions[0]).model_validate(
+        {
+            "id": "syn-tx-bank-dairy",
+            "account_id": MONTH.account.id,
+            "date": DAIRY.due_date,
+            "amount_cents": -DAIRY.amount_cents,
+            "counterparty": DAIRY.supplier_name,
+            "reference": f"SEPA {DAIRY.jinius_id}",
+        }
+    )
+    month = MONTH.model_copy(
+        update={
+            "transactions": (*MONTH.transactions, bank_line),
+            "invoices": (*MONTH.invoices, second),
+        }
+    )
+    store = Store(":memory:")
+    gate = Gate(MONTH.business, store, FakeBank(), lambda: NOW)
+    tools = EnaTools(Ledger(month, store, lambda: MONTH.last_day), store, gate, lambda: NOW)
+    before = tools.get_balance().balance_cents
+    tools.pay_invoice(second.id)
+    assert tools.get_balance().balance_cents == before - second.amount_cents
+    lines = tools.list_transactions("2026-11-01", "2026-11-30").transactions
+    dairy = [tx.reference for tx in lines if tx.counterparty == DAIRY.supplier_name]
+    assert dairy == [bank_line.reference, f"Invoice {second.jinius_id}"]
+    books = tools.get_books("2026-11-01", "2026-11-30")
+    assert [m.split()[0] for m in books.matched_invoices] == [DAIRY.id, second.id]
+
+
 def test_the_replay_moves_the_day() -> None:
     day = ReplayDay(MONTH.first_day)
     replay(MONTH, day.observe, duration=dt.timedelta(0))

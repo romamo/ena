@@ -197,14 +197,22 @@ class Ledger:
     def _gate_payments(self) -> list[tuple[Transaction, Receipt]]:
         """Each invoice the gate paid that no line of the month's statement pays yet, with
         the line the bank posts for it: on the receipt's day (the business's time zone),
-        to the supplier, with the invoice number in the reference."""
+        to the supplier, with the invoice number in the reference.
+
+        The statement is matched against all the month's invoices at once, one to one, so
+        a bank line that pays one invoice never hides the gate's payment of another from
+        the same supplier."""
         invoices = {invoice.id: invoice for invoice in self._month.invoices}
+        on_statement = {
+            match.invoice.id
+            for match in match_invoices(self._month.invoices, self._month.transactions).matches
+        }
         payments = []
         for receipt in self._store.receipts():
             invoice = invoices.get(receipt.ref)
             if invoice is None or receipt.result != PaymentResult.PAID:
                 continue
-            if match_invoices([invoice], self._month.transactions).matches:
+            if invoice.id in on_statement:
                 continue  # the bank's own line is on the statement: never counted twice
             line = Transaction(
                 id=f"gate-{receipt.id}",
