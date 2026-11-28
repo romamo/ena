@@ -64,6 +64,12 @@ Mon 30 Nov 12:00  card_sale_received  syn-sale-20261130-3        35.42
 184 events, 1 to 30 November 2026
 ```
 
+Then start the API on http://127.0.0.1:8000 (the chat, the owner's approve and decline, the JCC callback), with the synthetic month as of 16 November and the store in `tmp/ena.db`; `uv run ena-serve --help` lists the flags. Without `ANTHROPIC_API_KEY` in the shell `/chat` answers with an error event, and without the JCC settings in `.env` the callback refuses every call:
+
+```bash
+uv run ena-serve
+```
+
 ### On the sandboxes, with credentials
 
 Not needed for the demo. To call the bocAPI sandbox, copy `.env.example` to `.env` and fill in the bocAPI app's client id and secret, then:
