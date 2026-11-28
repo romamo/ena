@@ -531,9 +531,7 @@ def test_mark_paid_refuses_an_invoice_not_yet_approved_and_sends_nothing() -> No
         }
     )
 
-    with pytest.raises(
-        NotApproved, match="WaitingApproval: only an approved invoice"
-    ):
+    with pytest.raises(NotApproved, match="WaitingApproval: only an approved invoice"):
         desk(api).mark_paid(INVOICE_180)
 
     assert [r.method for r in api.seen] == ["GET"]
