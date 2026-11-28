@@ -262,6 +262,38 @@ export async function getDashboard<R extends keyof DashboardRoutes>(
   return body as DashboardRoutes[R];
 }
 
+// Jinius (ena/connectors/jinius.py): the invoices sent to the business, read on a tap
+
+export type JiniusInvoice = {
+  number: string;
+  supplier: string;
+  amount_cents: number;
+  issue_date: IsoDate;
+  due_date: IsoDate | null;
+  /** Jinius's own status, such as `WaitingApproval` */
+  status: string;
+};
+
+export type JiniusFeed = {
+  invoices: JiniusInvoice[];
+  source: "live" | "fixture";
+  note: string;
+};
+
+/** Reads the payable invoices from Jinius: live, or its saved responses, as `source` says. */
+export async function readJinius(fetcher: typeof fetch = fetch): Promise<JiniusFeed> {
+  const response = await fetcher("/jinius/invoices");
+  const body: unknown = await response.json();
+  if (!response.ok) {
+    const detail = isRecord(body) && typeof body.detail === "string" ? body.detail : "";
+    throw new ApiError(detail || `Jinius answered ${response.status}`);
+  }
+  if (!isRecord(body) || !Array.isArray(body.invoices) || (body.source !== "live" && body.source !== "fixture")) {
+    throw new ApiError(`not a Jinius answer: ${JSON.stringify(body)}`);
+  }
+  return body as JiniusFeed;
+}
+
 /** The owner's tap on an approval card; answers with the receipt card. */
 export async function decide(
   approvalId: string,

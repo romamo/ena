@@ -17,12 +17,15 @@ The app the demo runs, built from `.env` as each module reads it:
   the sandbox account's balance and statement (`get_bank_account`)
 - The chat agent (`ena/agent.py`, `ENA_*`) and the reply cache, in memory or in `--cache`
 - The JCC client (`JCC_*`) for `POST /jcc/callback`
+- The Jinius buyer's client (`JINIUS_*`) for `GET /jinius/invoices`, the dashboard's
+  "Read invoices from Jinius" button. It only reads: the month's invoices stay the seed's
 
 Without `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`) in the environment the server
 still starts, and `/chat` answers with an error event that names the missing key. The
 key is read from the environment, not `.env`: the agent's process inherits only that.
 Without `JCC_CALLBACK_SECRET` the callback route refuses every call with 503, so no
 unsigned callback is ever accepted; a JCC section filled only in part fails at start.
+Without `JINIUS_CLIENT_ID` the Jinius route answers 503 and names the missing settings.
 """
 
 from __future__ import annotations
@@ -52,6 +55,13 @@ from ena.cache import ReplyCache
 from ena.connectors.boc import BocClient, BocSettings
 from ena.connectors.boc_bank import BocBank, check_redirect
 from ena.connectors.jcc import JccClient, JccSettings, JccUnavailable
+from ena.connectors.jinius import (
+    JiniusClient,
+    JiniusNotConfigured,
+    JiniusSettings,
+    PayableFeed,
+    read_payable,
+)
 from ena.dashboard import Dashboard
 from ena.gate import COMPLETED, ConsentBank, Gate, PaymentBank
 from ena.mcp_server import BankReader, EnaTools, Ledger, ReplayDay, build_server
@@ -71,6 +81,7 @@ CREDENTIAL_ENV = ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")
 
 NO_CREDENTIAL = "no Anthropic credential: set ANTHROPIC_API_KEY in the shell that runs ena-serve"
 NO_JCC = "JCC is not configured: set JCC_API_USER, JCC_API_PASSWORD and JCC_CALLBACK_SECRET"
+NO_JINIUS = "Jinius is not configured: set JINIUS_CLIENT_ID and JINIUS_CLIENT_SECRET in .env"
 CALLBACK_PATH = "/jcc/callback"
 SIMULATED_PAYMENTS = (
     "payments are simulated: the stand-in bank completes every payment and no money moves;"
@@ -92,6 +103,8 @@ class ServeSettings(BaseModel):
     agent: AgentSettings
     jcc: JccSettings | None
     """None when JCC is not configured: the callback route refuses every call."""
+    jinius: JiniusSettings | None = None
+    """None when the buyer's Jinius client is not set: the Jinius route answers 503."""
     model_credential: bool
     """Whether the environment holds a credential for the model."""
     boc: BocSettings | None = None
@@ -137,6 +150,25 @@ def load_boc(env_file: Path | None) -> BocSettings:
     except ValueError as error:
         raise SystemExit(f"ena-serve --bank boc: {error}") from error
     return settings
+
+
+class _JiniusPresence(BaseSettings):
+    """Only whether `JINIUS_CLIENT_ID` is set: it decides whether Jinius is configured."""
+
+    model_config = SettingsConfigDict(env_prefix="JINIUS_", env_file=".env", extra="ignore")
+
+    client_id: str = ""
+
+
+def load_jinius(env_file: Path | None) -> JiniusSettings | None:
+    """The buyer's Jinius settings when `JINIUS_CLIENT_ID` is set, else None."""
+    if not _JiniusPresence(_env_file=env_file).client_id.strip():
+        return None
+    return JiniusSettings(_env_file=env_file)
+
+
+def _no_jinius() -> PayableFeed:
+    raise JiniusNotConfigured(NO_JINIUS)
 
 
 def has_model_credential(environ: Mapping[str, str]) -> bool:
@@ -188,11 +220,14 @@ class Server:
     store: Store
     jcc_http: httpx.AsyncClient
     boc_http: httpx.Client | None = None
+    jinius_http: httpx.Client | None = None
 
     def close(self) -> None:
         asyncio.run(self.jcc_http.aclose())
         if self.boc_http is not None:
             self.boc_http.close()
+        if self.jinius_http is not None:
+            self.jinius_http.close()
         self.store.close()
 
 
@@ -203,6 +238,7 @@ def build(
     bank: PaymentBank | ConsentBank | None = None,
     jcc_transport: httpx.AsyncBaseTransport | None = None,
     boc_transport: httpx.BaseTransport | None = None,
+    jinius_transport: httpx.BaseTransport | None = None,
 ) -> Server:
     """The app the demo runs; the runner, the bank and the transports are injectable."""
     month = synthetic_month()
@@ -241,6 +277,15 @@ def build(
     else:
         jcc_settings = settings.jcc
         http = httpx.AsyncClient(transport=jcc_transport, timeout=10.0)
+    jinius_http: httpx.Client | None = None
+    read_jinius = _no_jinius
+    if settings.jinius is not None:
+        jinius_http = httpx.Client(transport=jinius_transport, timeout=10.0)
+        jinius = JiniusClient(settings.jinius, jinius_http)
+
+        def read_jinius() -> PayableFeed:
+            return read_payable(jinius)
+
     app = create_app(
         store,
         JccClient(jcc_settings, http),
@@ -249,10 +294,11 @@ def build(
         gate=gate,
         advances=Advances(store, gate, month.events, _now),
         dashboard=Dashboard(ledger, store),
+        jinius=read_jinius,
     )
     if settings.jcc is None:
         _refuse_callbacks(app)
-    return Server(app, store, http, boc_http)
+    return Server(app, store, http, boc_http, jinius_http)
 
 
 def _refuse_callbacks(app: FastAPI) -> None:
@@ -302,6 +348,7 @@ def load_settings(
             cache=args.cache,
             agent=AgentSettings(_env_file=env_file),
             jcc=load_jcc(env_file),
+            jinius=load_jinius(env_file),
             model_credential=has_model_credential(environ),
             boc=load_boc(env_file) if args.bank == "boc" else None,
         )
@@ -320,6 +367,8 @@ def main(argv: list[str] | None = None) -> None:
         log.warning("%s; /chat answers with an error event", NO_CREDENTIAL)
     if settings.jcc is None:
         log.warning("%s in .env; %s refuses every call", NO_JCC, CALLBACK_PATH)
+    if settings.jinius is None:
+        log.warning("%s; /jinius/invoices answers 503", NO_JINIUS)
     where = "memory" if settings.store is None else settings.store
     log.info("the synthetic month as of %s, the store in %s", settings.day, where)
     server = build(settings)

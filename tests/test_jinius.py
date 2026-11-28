@@ -17,6 +17,7 @@ from ena.connectors.jinius import (
     JiniusUnavailable,
     ManualPayment,
     VatNumber,
+    read_payable,
     read_supplier_invoices,
     to_supplier_invoice,
 )
@@ -376,3 +377,47 @@ def test_read_supplier_invoices_does_not_hide_a_refusal() -> None:
         read_supplier_invoices(client(api), IBANS)
 
     assert not isinstance(caught.value, JiniusUnavailable)
+
+
+# The owner's read: no IBAN directory needed
+
+
+def test_read_payable_live_shows_each_invoice_as_jinius_sent_it() -> None:
+    api = Api(
+        {
+            ("GET", "/v3/invoices/payable"): [
+                httpx.Response(200, json=fixture("invoices_payable.json"))
+            ]
+        }
+    )
+
+    feed = read_payable(client(api))
+
+    assert (feed.source, feed.note) == ("live", "Jinius integration environment, live")
+    by_number = {i.number: i for i in feed.invoices}
+    assert set(by_number) == {"EFM-2026-001", "EFM-2026-002"}
+    flour = by_number["EFM-2026-002"]
+    assert flour.supplier == "Ena Flour Mill Ltd"
+    assert flour.amount_cents == 124000
+    assert flour.status == "WaitingApproval"
+    assert flour.due_date is not None
+
+
+def test_read_payable_falls_back_to_the_saved_invoices_when_jinius_is_down() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route to host")
+
+    jinius = JiniusClient(settings(), httpx.Client(transport=httpx.MockTransport(handle)))
+
+    feed = read_payable(jinius)
+
+    assert feed.source == "fixture"
+    assert "sandbox offline, showing saved data" in feed.note
+    assert sorted(i.amount_cents for i in feed.invoices) == [18000, 124000]
+
+
+def test_read_payable_does_not_hide_a_refusal() -> None:
+    api = Api({("GET", "/v3/invoices/payable"): [httpx.Response(403)]})
+
+    with pytest.raises(JiniusError, match="plan lacks this API"):
+        read_payable(client(api))

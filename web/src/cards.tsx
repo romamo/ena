@@ -19,7 +19,7 @@ import { day, dayTime, euro } from "./format";
 export const FetchContext = createContext<typeof fetch>((input, init) => fetch(input, init));
 
 /** The dashboard's tab for each kind of card. */
-export type BoardTab = "overview" | "receipts" | "forecast" | "credit";
+export type BoardTab = "overview" | "receipts" | "forecast" | "credit" | "jinius";
 
 const CARD_TAB: Record<CardEvent["card_kind"], BoardTab> = {
   approval: "overview",

@@ -63,6 +63,10 @@ class JiniusUnavailable(JiniusError):
     """Jinius could not be reached, or failed on its side (5xx)."""
 
 
+class JiniusNotConfigured(JiniusError):
+    """The buyer's Jinius client is not set in `.env`, so nothing was asked of Jinius."""
+
+
 class JiniusSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="JINIUS_", env_file=".env", extra="ignore")
 
@@ -361,10 +365,72 @@ def _error(response: httpx.Response) -> JiniusError:
 # Reading with the fixture fallback
 
 
+Source = Literal["live", "fixture"]
+
+LIVE_NOTE = "Jinius integration environment, live"
+
+
+class PayableInvoice(BaseModel):
+    """A payable invoice as the owner's page shows it, read from Jinius with nothing added."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    number: str
+    """The invoice number (`documentNumber`), such as `EFM-2026-002`."""
+    supplier: str
+    amount_cents: int
+    issue_date: dt.date
+    due_date: dt.date | None
+    status: str
+    """Jinius's own status, such as `WaitingApproval`."""
+
+    @classmethod
+    def of(cls, document: Document) -> PayableInvoice:
+        if document.issuer is None:
+            raise JiniusError(f"{document.document_number} names no supplier")
+        return cls(
+            number=document.document_number,
+            supplier=document.issuer.registered_business_name,
+            amount_cents=document.amount_cents,
+            issue_date=document.issue_date,
+            due_date=document.due_date,
+            status=document.status,
+        )
+
+
+class PayableFeed(BaseModel):
+    """The invoices sent to the business, and where they were read from."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    invoices: tuple[PayableInvoice, ...]
+    source: Source
+    note: str
+    """What the page shows about where the invoices came from."""
+
+
+def read_payable(client: JiniusClient, fixture: Path = FIXTURE_PAYABLE) -> PayableFeed:
+    """The payable invoices live, or from the saved fixture when Jinius is unreachable."""
+    documents, source, note = _payable_documents(client, fixture)
+    return PayableFeed(
+        invoices=tuple(PayableInvoice.of(doc) for doc in documents), source=source, note=note
+    )
+
+
+def _payable_documents(
+    client: JiniusClient, fixture: Path
+) -> tuple[tuple[Document, ...], Source, str]:
+    try:
+        return tuple(client.payable_invoices()), "live", LIVE_NOTE
+    except JiniusUnavailable as error:
+        page = DocumentPage.model_validate(json.loads(fixture.read_text(encoding="utf-8")))
+        return page.documents, "fixture", f"Jinius sandbox offline, showing saved data ({error})"
+
+
 @dataclass(frozen=True, slots=True)
 class InvoiceFeed:
     invoices: tuple[SupplierInvoice, ...]
-    source: Literal["live", "fixture"]
+    source: Source
     note: str
     """What the UI shows about where the invoices came from."""
 
@@ -375,17 +441,9 @@ def read_supplier_invoices(
     fixture: Path = FIXTURE_PAYABLE,
 ) -> InvoiceFeed:
     """Read the supplier invoices live, or from the saved fixture when Jinius is unreachable."""
-    try:
-        documents = client.payable_invoices()
-    except JiniusUnavailable as error:
-        page = DocumentPage.model_validate(json.loads(fixture.read_text(encoding="utf-8")))
-        return InvoiceFeed(
-            invoices=tuple(to_supplier_invoice(doc, ibans) for doc in page.documents),
-            source="fixture",
-            note=f"Jinius sandbox offline, showing saved data ({error})",
-        )
+    documents, source, note = _payable_documents(client, fixture)
     return InvoiceFeed(
         invoices=tuple(to_supplier_invoice(doc, ibans) for doc in documents),
-        source="live",
-        note="Jinius integration environment, live",
+        source=source,
+        note=note,
     )

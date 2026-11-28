@@ -324,3 +324,11 @@ button.alert:hover { background: #fff1d6; }
 .dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: middle; }
 .dot.have { background: var(--blue); }
 .dot.short { background: var(--warn); }
+
+/* Jinius tab */
+.jinius-invoice { gap: 4px; }
+.jinius-row { display: flex; justify-content: space-between; gap: 12px; }
+.jinius-row .amount { font-variant-numeric: tabular-nums; }
+.source { font-size: 12px; padding: 6px 10px; border: 1px solid var(--line); background: #fff; }
+.source.live { color: var(--good); }
+.source.saved { color: var(--warn); }
