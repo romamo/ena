@@ -567,6 +567,35 @@ def test_a_reply_without_tools_and_a_subagents_text() -> None:
     assert pieces == ["I don't know."]
 
 
+def test_the_stream_is_read_to_its_end_after_the_result() -> None:
+    # A message after the result (a follow-up turn) is read, never sent to the owner
+    seen: list[object] = []
+    messages = [
+        said(TextBlock("The reply.")),
+        result(),
+        said(TextBlock("A later turn's text.")),
+    ]
+
+    class Recording:
+        def __aiter__(self) -> AsyncIterator[object]:
+            return self.stream()
+
+        async def stream(self) -> AsyncIterator[object]:
+            for message in messages:
+                seen.append(message)
+                yield message
+
+    ena, _ = build(LEAN_WEEK, cache=None)
+    agent = ClaudeAgent(AgentSettings(_env_file=None), build_server(ena.agent.tools))
+
+    async def collect() -> list[str]:
+        return [piece async for piece in agent.replies(Recording())]
+
+    assert asyncio.run(collect()) == ["The reply."]
+    assert seen == messages
+    ena.store.close()
+
+
 def test_a_turn_with_no_result_says_nothing_and_raises() -> None:
     with pytest.raises(AgentError, match="without a result"):
         replies(said(TextBlock("Half an answer")))

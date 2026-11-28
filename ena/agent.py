@@ -160,6 +160,7 @@ class ClaudeAgent:
     async def replies(self, messages: AsyncIterable[object]) -> AsyncIterator[str]:
         """The text of the model's reply, without the text it wrote next to a tool call."""
         held: list[str] = []
+        ended = False
         async for message in messages:
             if isinstance(message, AssistantMessage) and message.parent_tool_use_id is None:
                 if any(isinstance(block, ToolUseBlock) for block in message.content):
@@ -174,10 +175,14 @@ class ClaudeAgent:
                 if message.is_error:
                     raise AgentError(f"the agent's turn ended in {message.subtype}")
                 self._session = message.session_id
-                for piece in held:
-                    yield piece
-                return
-        raise AgentError("the agent's turn ended without a result")
+                if not ended:
+                    ended = True
+                    for piece in held:
+                        yield piece
+                held.clear()
+            # the stream is read to its end, so the session finishes before the next turn
+        if not ended:
+            raise AgentError("the agent's turn ended without a result")
 
 
 # The receipt rule
