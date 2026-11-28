@@ -1,0 +1,11 @@
+---
+apiVersion: cloudfall/v1
+kind: SshPublicKey
+metadata:
+  id: roman
+  description: SSH public key of roman
+spec:
+  owner: roman
+  environment: production
+  publicKey: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDe8u9JnjkXvqZJxrlSDzUrGOyhzwM54pfaK9h0ekFWp/YIoXJVElaDXDfzb5W8gcx+e2t/k1q8LVZIRcre1SRiO9d8dhLsnaDd8T2GyPjDDJhALFmgp6ahzbrRMhmHBJJLnssqdImjB5TEYAau8dkPjOf4Qi19CGme4PvL0A16Rc63FSMa7nB1/6BZVmpFO9xne9XM/5nI0ZhU7agjEQWRaxXOOUzuFPUwcUJ1YRxDV7icj84WEts0w0foAMQfr+hFCXlG3m0f/rbftwXLhn4vF0zvQ9CIuKHCGPO4yhDOQjH+g/B8LdxgmEFGljzTnC8poGrmhis7ktPy7YWoX6OD
+  lifecycle: active

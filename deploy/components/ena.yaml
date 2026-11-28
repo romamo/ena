@@ -1,0 +1,56 @@
+---
+apiVersion: cloudfall/v1
+kind: Component
+metadata:
+  id: ena
+  description: ena-serve with the built chat page on one origin, the synthetic month as of 16 November
+spec:
+  application: ena
+  repository:
+    url: https://github.com/romamo/ena.git
+  runtime:
+    type: python
+    version: "3.15"
+    packageManager: uv
+  buildTools:
+    node: "22.22.2"
+    npm: "10.0.0"
+  build:
+    - workingDirectory: web
+      command: [npm, ci]
+    - workingDirectory: web
+      command: [npm, run, build]
+  artifact:
+    include:
+      - web/dist
+  deployment:
+    strategy: artifact-symlink
+    servers:
+      - ena-1
+    installRoot: /srv/apps/ena/web
+    retainUntilCleanup: true
+  service:
+    manager: systemd
+    name: ena
+    command:
+      - .venv/bin/ena-serve
+      - --host
+      - 127.0.0.1
+      - --port
+      - "8790"
+      - --web
+      - web/dist
+      - --store
+      - /srv/apps/ena/web/shared/ena.db
+  environment:
+    # the Claude CLI the agent SDK starts keeps its state under HOME
+    HOME: /srv/apps/ena
+  healthCheck:
+    type: http
+    scheme: http
+    port: 8790
+    path: /health
+    expectedStatuses:
+      - 200
+    timeoutSeconds: 5
+    attempts: 10

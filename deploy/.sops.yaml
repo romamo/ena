@@ -1,0 +1,11 @@
+# sops encrypts every file matching a rule below with the listed age keys,
+# so fragments under secrets/ are safe to commit. One-time setup:
+#
+#   age-keygen -o ~/.config/cloudfall/age.key
+#   export SOPS_AGE_KEY_FILE=~/.config/cloudfall/age.key
+#
+# Replace the `age` value with the public key (age1...) that age-keygen
+# printed, then write fragments with `sops secrets/production/<app>.env`.
+creation_rules:
+  - path_regex: secrets/.*\.env$
+    age: age1replace-with-your-public-key

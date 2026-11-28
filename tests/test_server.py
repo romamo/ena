@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from ena.agent import AgentRunner, AgentSettings
 from ena.connectors.jcc import JccSettings
@@ -381,3 +382,27 @@ def test_a_variable_naming_a_settings_init_argument_is_dropped(tmp_path: Path) -
     env.write_text("ENA__CLI_PARSE_ARGS=true\nENA_MODEL=claude-test\n", encoding="utf-8")
     loaded = load_settings(parser().parse_args(["--memory"]), {}, env)
     assert loaded.agent.model == "claude-test"
+
+
+# The built page and the health check
+
+
+def test_the_health_check_answers_ok(served: tuple[Server, TestClient, Agents]) -> None:
+    _, http, _ = served
+    response = http.get("/health")
+    assert (response.status_code, response.json()) == (200, {"status": "ok"})
+
+
+def test_the_built_page_is_served_beside_the_api(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("<p>Ena</p>", encoding="utf-8")
+    server = build(settings(web=tmp_path), runner=Agents())
+    with TestClient(server.app) as http:
+        assert http.get("/").text == "<p>Ena</p>"
+        assert http.get("/health").json() == {"status": "ok"}
+        assert http.post("/chat", json={"text": "What's my balance?"}).status_code == 200
+    server.close()
+
+
+def test_a_web_folder_without_a_build_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match=r"no index\.html"):
+        settings(web=tmp_path)

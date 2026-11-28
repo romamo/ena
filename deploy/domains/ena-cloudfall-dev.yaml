@@ -1,0 +1,34 @@
+---
+apiVersion: cloudfall/v1
+kind: Domain
+metadata:
+  id: ena-cloudfall-dev
+  description: Public route for Ena's hosted demo, proxied by Cloudflare to ena-1
+spec:
+  primaryName: ena.cloudfall.dev
+  aliases: []
+  proxy:
+    server: ena-1
+    configurationPath: /etc/nginx/sites-available/ena.cloudfall.dev.conf
+    service: nginx.service
+    upstream:
+      address: 127.0.0.1
+      port: 8790
+  origin:
+    server: ena-1
+    configurationPath: /etc/nginx/sites-available/ena.cloudfall.dev.conf
+    service: nginx.service
+    scheme: http
+    port: 8790
+    serverName: ena.cloudfall.dev
+  edge:
+    provider: cloudflare
+    mode: proxied
+  tls:
+    mode: required
+  healthCheck:
+    scheme: https
+    path: /health
+    expectedStatuses:
+      - 200
+    timeoutSeconds: 10

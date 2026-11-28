@@ -20,6 +20,8 @@ The app the demo runs, built from `.env` as each module reads it:
   `create_pay_link` when `JCC_RETURN_URL` is set too
 - The Jinius buyer's client (`JINIUS_*`) for `GET /jinius/invoices`, the dashboard's
   "Read invoices from Jinius" button. It only reads: the month's invoices stay the seed's
+- The built chat page (`--web web/dist`, from `npm run build`) on the same origin, for a
+  host with no Vite dev server in front; `GET /health` answers 200 for the host's checks
 
 Without `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`) in the environment the server
 still starts, and `/chat` answers with an error event that names the missing key. The
@@ -47,6 +49,7 @@ import uvicorn
 from dotenv import dotenv_values
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
@@ -111,11 +114,15 @@ class ServeSettings(BaseModel):
     """Whether the environment holds a credential for the model."""
     boc: BocSettings | None = None
     """None for the stand-in bank; the bocAPI sandbox's settings for `--bank boc`."""
+    web: Path | None = None
+    """The built chat page to serve at `/`, or None when Vite serves it."""
 
     @model_validator(mode="after")
     def _day_in_month(self) -> Self:
         if not FIRST_DAY <= self.day <= LAST_DAY:
             raise ValueError(f"the day must be from {FIRST_DAY} to {LAST_DAY}, got {self.day}")
+        if self.web is not None and not (self.web / "index.html").is_file():
+            raise ValueError(f"the web folder {self.web} has no index.html: run npm run build")
         return self
 
 
@@ -329,6 +336,14 @@ def build(
     )
     if settings.jcc is None:
         _refuse_callbacks(app)
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    if settings.web is not None:
+        # mounted last, so every API route above wins over a file of the same path
+        app.mount("/", StaticFiles(directory=settings.web, html=True), name="web")
     return Server(app, store, http, boc_http, jinius_http)
 
 
@@ -365,6 +380,9 @@ def parser() -> argparse.ArgumentParser:
         default="stand-in",
         help="stand-in: simulated payments (default); boc: the bocAPI sandbox (BOC_* in .env)",
     )
+    p.add_argument(
+        "--web", type=Path, default=None, help="serve the built chat page from this folder"
+    )
     return p
 
 
@@ -382,6 +400,7 @@ def load_settings(
             jinius=load_jinius(env_file, environ),
             model_credential=has_model_credential(environ),
             boc=load_boc(env_file, environ) if args.bank == "boc" else None,
+            web=args.web,
         )
     except ValidationError as error:
         problems = "; ".join(
