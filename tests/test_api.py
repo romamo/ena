@@ -178,6 +178,26 @@ def test_paid_without_a_receipt_is_marked_unconfirmed(api: Api) -> None:
     assert api.bank.calls == []
 
 
+def test_a_listed_old_receipt_does_not_confirm_a_new_payment_claim(api: Api) -> None:
+    paid_now = api.chat(
+        "Pay the dairy invoice",
+        Call("list_receipts", {"limit": 5}),
+        Call("pay_invoice", {"invoice_id": DAIRY.id}),
+        Say("Paid Kyrenia Dairy (synthetic) €180.00."),
+    )
+    assert paid_now[-1][1]["unconfirmed"] is False
+
+    events = api.chat(
+        "Did you pay the flour?",
+        Call("list_receipts", {"limit": 5}),
+        Say("Yes, I paid the flour invoice."),
+    )
+    assert kinds(events) == ["text", "done"]
+    assert events[0][1]["text"] == UNCONFIRMED + "Yes, I paid the flour invoice."
+    assert events[-1][1]["unconfirmed"] is True
+    assert api.bank.calls == [DAIRY.id]
+
+
 def test_a_payment_above_the_limit_is_an_approval_card_until_the_owner_taps(api: Api) -> None:
     events = api.chat(
         "Pay the flour invoice",
