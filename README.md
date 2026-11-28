@@ -34,6 +34,7 @@ Members: Roman, Youssef and Keith. Keith's area is still to agree.
 - [docs/build-plan.md](docs/build-plan.md): proposed architecture, data model, tools, rules, tasks and timeline
 - [docs/hackathon.md](docs/hackathon.md): the hackathon reference: APIs, links, rules, how the jury scores
 - [docs/interviews/](docs/interviews/guide.md): the customer interview guide (English, Russian, Greek)
+- [ena/models.py](ena/models.py): the data model of the build plan's §4: amounts in integer euro cents, dates as ISO `YYYY-MM-DD`, frozen models that refuse unknown fields
 
 Every team member can edit these documents: change them in a pull request or push to `main`, and date each decision.
 
