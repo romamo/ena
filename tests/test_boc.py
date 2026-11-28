@@ -87,28 +87,35 @@ def test_create_subscription_sends_consent_headers() -> None:
     assert subscription.subscription_id == "Sub1"
 
 
-def test_consent_urls_carry_the_subscription_or_payment() -> None:
+def test_consent_urls_carry_the_subscription_or_payment_and_no_state() -> None:
+    # The sandbox answers a consent URL carrying `state` with `error=badstate` (#35)
     boc = client(httpx.MockTransport(lambda _: httpx.Response(500)))
 
-    sub = parse_qs(urlsplit(boc.subscription_consent_url(SubscriptionId("Sub1"), "st1")).query)
-    pay = parse_qs(urlsplit(boc.payment_consent_url(PaymentId("P1"), "st2")).query)
+    sub = parse_qs(urlsplit(boc.subscription_consent_url(SubscriptionId("Sub1"))).query)
+    pay = parse_qs(urlsplit(boc.payment_consent_url(PaymentId("P1"))).query)
 
-    assert sub["subscriptionid"] == ["Sub1"]
-    assert sub["scope"] == ["UserOAuth2Security"]
-    assert sub["redirect_uri"] == ["https://localhost/callback"]
-    assert sub["state"] == ["st1"]
-    assert pay["paymentid"] == ["P1"]
-    assert pay["state"] == ["st2"]
+    common = {
+        "response_type": ["code"],
+        "redirect_uri": ["https://localhost/"],
+        "scope": ["UserOAuth2Security"],
+        "client_id": ["app-id"],
+    }
+    assert sub == {**common, "subscriptionid": ["Sub1"]}
+    assert pay == {**common, "paymentid": ["P1"]}
+    assert "state" not in sub
+    assert "state" not in pay
 
 
 def test_auth_code_is_read_from_the_redirect() -> None:
-    assert AuthCode.from_redirect("https://localhost/callback?code=abc&state=s", "s").value == "abc"
+    assert AuthCode.from_redirect("https://localhost/?code=abc").value == "abc"
     with pytest.raises(ValueError, match="no `code`"):
-        AuthCode.from_redirect("https://localhost/callback", "s")
-    with pytest.raises(BocError, match="consent refused: access_denied"):
-        AuthCode.from_redirect("https://localhost/callback?error=access_denied", "s")
-    with pytest.raises(BocError, match="does not match"):
-        AuthCode.from_redirect("https://localhost/callback?code=abc&state=other", "s")
+        AuthCode.from_redirect("https://localhost/")
+    with pytest.raises(BocError, match="consent refused: access_denied denied by user"):
+        AuthCode.from_redirect(
+            "https://localhost/?error=access_denied&error_description=denied+by+user"
+        )
+    with pytest.raises(BocError, match="consent refused: badstate"):
+        AuthCode.from_redirect("https://localhost/?state=x&error=badstate")
 
 
 def test_statement_converts_boc_dates_and_query() -> None:
