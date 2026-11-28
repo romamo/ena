@@ -62,7 +62,7 @@ Every later baseline run must pass the same `--extra-vars`, or it reopens 80 and
 
 ## How ena-1 was set up
 
-On 2026-11-28, in this order: `playbook run bootstrap --limit ena-1` (packages, the `ena` user and its folders), `playbook run baseline --limit ena-1` (after a `--dry-run`), the `ena` A record in the cloudfall.dev zone (DNS only), `playbook run domains --limit ena-1 --extra-vars '{"cloudfall_nginx_site_issue_certificate": true}'` (nginx and the certificate), the first deploy, then the record switched to proxied.
+On 2026-11-28, in this order: `playbook run bootstrap --limit ena-1` (packages, the `ena` user and its folders), `playbook run baseline --limit ena-1` (after a `--dry-run`), the `ena` A record in the cloudfall.dev zone (DNS only), `playbook run domains --limit ena-1 --extra-vars '{"cloudfall_nginx_site_issue_certificate": true}'` (nginx and the certificate), the first deploy, the record switched to proxied, then `playbook run baseline --limit ena-1 --extra-vars @firewall/cloudflare-origin.json` (after a `--dry-run`), after which the origin answers on 80 and 443 only to Cloudflare.
 
 ## Take it down
 
