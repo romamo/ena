@@ -279,16 +279,18 @@ class JiniusClient:
     def invoice(self, document_id: DocumentId) -> Document:
         return Document.model_validate(self._call("GET", f"/v3/invoices/{document_id}"))
 
-    def approve(self, document_id: DocumentId) -> Document:
-        """Approve an invoice as its recipient; Jinius marks paid only approved invoices."""
-        return Document.model_validate(self._call("POST", f"/v3/invoices/{document_id}/approve"))
+    def approve(self, document_id: DocumentId) -> None:
+        """Approve an invoice as its recipient; Jinius marks paid only approved invoices.
 
-    def mark_paid(self, document_id: DocumentId, payment: ManualPayment) -> Document:
-        """Report a payment made outside Jinius. It reaches Paid once the supplier accepts."""
-        data = self._call(
-            "POST", f"/v3/invoices/{document_id}/markAsPaid", json_body=payment.to_jinius()
-        )
-        return Document.model_validate(data)
+        The answer's body is not read: its shape is not verified against the live API, so
+        a caller reads the invoice again (`invoice`) to see the change."""
+        self._act("POST", f"/v3/invoices/{document_id}/approve")
+
+    def mark_paid(self, document_id: DocumentId, payment: ManualPayment) -> None:
+        """Report a payment made outside Jinius. It reaches Paid once the supplier accepts.
+
+        As with `approve`, the answer's body is not read."""
+        self._act("POST", f"/v3/invoices/{document_id}/markAsPaid", json_body=payment.to_jinius())
 
     # Plumbing
 
@@ -325,6 +327,16 @@ class JiniusClient:
         params: dict[str, str] | None = None,
         json_body: Any = None,
     ) -> Any:
+        return self._act(method, path, params=params, json_body=json_body).json()
+
+    def _act(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        json_body: Any = None,
+    ) -> httpx.Response:
         response = self._request(method, path, params, json_body)
         if response.status_code == 401:
             # Token expired or revoked early: refresh once, then fail loudly (§11)
@@ -332,7 +344,7 @@ class JiniusClient:
             response = self._request(method, path, params, json_body)
         if response.is_error:
             raise _error(response)
-        return response.json()
+        return response
 
     def _request(
         self, method: str, path: str, params: dict[str, str] | None, json_body: Any
@@ -380,6 +392,8 @@ class PayableInvoice(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    id: str
+    """The Jinius document id, which the owner's approve and mark-paid taps name."""
     number: str = Field(min_length=1)
     """The invoice number (`documentNumber`), such as `EFM-2026-002`."""
     supplier: str = Field(min_length=1)
@@ -399,6 +413,7 @@ class PayableInvoice(BaseModel):
         if document.issuer is None:
             raise JiniusError(f"{document.document_number} names no supplier")
         return cls(
+            id=str(DocumentId(document.id)),
             number=document.document_number,
             supplier=document.issuer.registered_business_name,
             amount_cents=document.amount_cents,
@@ -435,6 +450,60 @@ def _payable_documents(
     except JiniusUnavailable as error:
         page = DocumentPage.model_validate(json.loads(fixture.read_text(encoding="utf-8")))
         return page.documents, "fixture", f"Jinius sandbox offline, showing saved data ({error})"
+
+
+class NotApproved(JiniusError):
+    """Mark paid was tapped on an invoice that isn't approved: Jinius refuses it, so Ena does."""
+
+
+APPROVED = "Approved"
+MARK_PAID_COMMENT = "Marked paid by Ena, a hackathon demo: no money moved"
+
+
+class JiniusDesk:
+    """The owner's read and taps on Jinius: read the payable invoices, approve one, mark one
+    paid. Each tap answers with the invoice as Jinius holds it afterwards, read again.
+
+    Only the owner's tap on the page reaches it (`ena/api.py`); no agent tool does. Without
+    a client every call is refused with `JiniusNotConfigured`, and nothing is sent."""
+
+    def __init__(
+        self,
+        client: JiniusClient | None,
+        today: Callable[[], dt.date],
+        not_configured: str = "Jinius is not configured",
+    ) -> None:
+        self._client = client
+        self._today = today
+        self._not_configured = not_configured
+
+    def read(self) -> PayableFeed:
+        return read_payable(self._jinius())
+
+    def approve(self, document_id: DocumentId) -> PayableInvoice:
+        jinius = self._jinius()
+        jinius.approve(document_id)
+        return PayableInvoice.of(jinius.invoice(document_id))
+
+    def mark_paid(self, document_id: DocumentId) -> PayableInvoice:
+        """Report the invoice paid in full today, referenced by its number."""
+        jinius = self._jinius()
+        document = jinius.invoice(document_id)
+        if document.status != APPROVED:
+            raise NotApproved(f"{document.document_number} is {document.status}: approve it first")
+        payment = ManualPayment(
+            amount_cents=document.amount_cents,
+            paid_on=self._today(),
+            reference=f"ENA-{document.document_number}",
+            comment=MARK_PAID_COMMENT,
+        )
+        jinius.mark_paid(document_id, payment)
+        return PayableInvoice.of(jinius.invoice(document_id))
+
+    def _jinius(self) -> JiniusClient:
+        if self._client is None:
+            raise JiniusNotConfigured(self._not_configured)
+        return self._client
 
 
 @dataclass(frozen=True, slots=True)

@@ -406,3 +406,76 @@ def test_the_built_page_is_served_beside_the_api(tmp_path: Path) -> None:
 def test_a_web_folder_without_a_build_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match=r"no index\.html"):
         settings(web=tmp_path)
+
+
+# The owner's taps on a Jinius invoice
+
+INVOICE_ID = "3b1b38a9-e0d2-484d-b43a-6fd641c8ac27"
+
+
+def jinius_invoice(status: str) -> dict[str, Any]:
+    data = json.loads((JINIUS_FIXTURES / "invoice_EFM-2026-001.json").read_text(encoding="utf-8"))
+    assert data["id"] == INVOICE_ID
+    return {**data, "status": status}
+
+
+def routing_jinius(routes: dict[tuple[str, str], list[httpx.Response]]) -> httpx.MockTransport:
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/token":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 300})
+        return routes[(request.method, request.url.path)].pop(0)
+
+    return httpx.MockTransport(handle)
+
+
+def tap(transport: httpx.MockTransport, path: str) -> httpx.Response:
+    server = build(settings(jinius=jinius_settings()), runner=Agents(), jinius_transport=transport)
+    with TestClient(server.app) as http:
+        answer: httpx.Response = http.post(path)
+    server.close()
+    return answer
+
+
+def test_the_owner_approves_a_jinius_invoice() -> None:
+    transport = routing_jinius(
+        {
+            ("POST", f"/v3/invoices/{INVOICE_ID}/approve"): [httpx.Response(200)],
+            ("GET", f"/v3/invoices/{INVOICE_ID}"): [
+                httpx.Response(200, json=jinius_invoice("Approved"))
+            ],
+        }
+    )
+
+    answer = tap(transport, f"/jinius/invoices/{INVOICE_ID}/approve")
+
+    assert answer.status_code == 200
+    assert (answer.json()["number"], answer.json()["status"]) == ("EFM-2026-001", "Approved")
+
+
+def test_mark_paid_before_approval_is_refused_409() -> None:
+    transport = routing_jinius(
+        {
+            ("GET", f"/v3/invoices/{INVOICE_ID}"): [
+                httpx.Response(200, json=jinius_invoice("WaitingApproval"))
+            ]
+        }
+    )
+
+    answer = tap(transport, f"/jinius/invoices/{INVOICE_ID}/mark-paid")
+
+    assert answer.status_code == 409
+    assert answer.json()["detail"] == "EFM-2026-001 is WaitingApproval: approve it first"
+
+
+def test_a_tap_on_a_malformed_id_is_404_and_sends_nothing() -> None:
+    answer = tap(routing_jinius({}), "/jinius/invoices/EFM-2026-001/approve")
+
+    assert answer.status_code == 404
+
+
+def test_without_jinius_settings_a_tap_is_503() -> None:
+    server = build(settings(), runner=Agents())
+    with TestClient(server.app) as http:
+        answer = http.post(f"/jinius/invoices/{INVOICE_ID}/approve")
+    server.close()
+    assert (answer.status_code, answer.json()) == (503, {"detail": NO_JINIUS})

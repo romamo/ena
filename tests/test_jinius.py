@@ -14,10 +14,13 @@ from ena.connectors.jinius import (
     DocumentId,
     DocumentPage,
     JiniusClient,
+    JiniusDesk,
     JiniusError,
+    JiniusNotConfigured,
     JiniusSettings,
     JiniusUnavailable,
     ManualPayment,
+    NotApproved,
     VatNumber,
     read_payable,
     read_supplier_invoices,
@@ -282,7 +285,7 @@ def test_approve_and_mark_paid_send_the_documented_requests() -> None:
     jinius = client(api)
 
     jinius.approve(INVOICE_180)
-    result = jinius.mark_paid(
+    jinius.mark_paid(
         INVOICE_180,
         ManualPayment(18000, dt.date(2026, 12, 1), "BOC-REF-123", "Paid by Ena via bocAPI"),
     )
@@ -296,7 +299,14 @@ def test_approve_and_mark_paid_send_the_documented_requests() -> None:
         "referenceNumber": "BOC-REF-123",
         "comments": "Paid by Ena via bocAPI",
     }
-    assert result.status == "Approved"
+
+
+def test_an_action_succeeds_whatever_its_answer_body() -> None:
+    api = Api({("POST", f"/v3/invoices/{INVOICE_180}/approve"): [httpx.Response(204)]})
+
+    client(api).approve(INVOICE_180)
+
+    assert [r.url.path for r in api.seen] == [f"/v3/invoices/{INVOICE_180}/approve"]
 
 
 def test_mark_paid_refusal_is_raised_with_its_detail() -> None:
@@ -461,3 +471,74 @@ def test_concurrent_reads_fetch_one_token() -> None:
     second.join(timeout=5)
 
     assert tokens == 1
+
+
+# The owner's taps: approve, then mark paid, each answered by the invoice read again
+
+TODAY = dt.date(2026, 11, 28)
+
+
+def desk(api: Api) -> JiniusDesk:
+    return JiniusDesk(client(api), lambda: TODAY)
+
+
+def test_approve_answers_with_the_invoice_read_again() -> None:
+    api = Api(
+        {
+            ("POST", f"/v3/invoices/{INVOICE_180}/approve"): [httpx.Response(200, json={})],
+            ("GET", f"/v3/invoices/{INVOICE_180}"): [
+                httpx.Response(200, json=invoice_data(status="Approved"))
+            ],
+        }
+    )
+
+    invoice = desk(api).approve(INVOICE_180)
+
+    assert (invoice.id, invoice.status) == (str(INVOICE_180), "Approved")
+    assert [r.method for r in api.seen] == ["POST", "GET"]
+
+
+def test_mark_paid_reports_the_full_amount_today_by_the_invoice_number() -> None:
+    api = Api(
+        {
+            ("GET", f"/v3/invoices/{INVOICE_180}"): [
+                httpx.Response(200, json=invoice_data(status="Approved")),
+                httpx.Response(200, json=invoice_data(status="PendingPaymentAcceptance")),
+            ],
+            ("POST", f"/v3/invoices/{INVOICE_180}/markAsPaid"): [httpx.Response(200)],
+        }
+    )
+
+    invoice = desk(api).mark_paid(INVOICE_180)
+
+    mark = next(r for r in api.seen if r.method == "POST")
+    assert json.loads(mark.content) == {
+        "paymentAmount": 180.0,
+        "paymentMethod": "Other",
+        "invoicePaymentDate": "2026-11-28T00:00:00Z",
+        "referenceNumber": "ENA-EFM-2026-001",
+        "comments": "Marked paid by Ena, a hackathon demo: no money moved",
+    }
+    assert invoice.status == "PendingPaymentAcceptance"
+
+
+def test_mark_paid_refuses_an_invoice_not_yet_approved_and_sends_nothing() -> None:
+    api = Api(
+        {
+            ("GET", f"/v3/invoices/{INVOICE_180}"): [
+                httpx.Response(200, json=invoice_data(status="WaitingApproval"))
+            ]
+        }
+    )
+
+    with pytest.raises(NotApproved, match="EFM-2026-001 is WaitingApproval: approve it first"):
+        desk(api).mark_paid(INVOICE_180)
+
+    assert [r.method for r in api.seen] == ["GET"]
+
+
+def test_without_a_client_the_desk_sends_nothing() -> None:
+    idle = JiniusDesk(None, lambda: TODAY, "not configured here")
+
+    with pytest.raises(JiniusNotConfigured, match="not configured here"):
+        idle.approve(INVOICE_180)

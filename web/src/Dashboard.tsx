@@ -3,7 +3,10 @@ import {
   ApiError,
   getDashboard,
   readJinius,
+  tapJinius,
   type JiniusFeed,
+  type JiniusInvoice,
+  type JiniusTap,
   type Credit,
   type DashboardRoutes,
   type ForecastView,
@@ -375,13 +378,29 @@ const JINIUS_STATUS: Record<string, string> = {
   Voided: "Voided",
 };
 
-type JiniusRead = { load: Load<JiniusFeed> | null; read: () => void };
+/** What the owner can do on an invoice in each Jinius status: approve it, then mark it paid. */
+const JINIUS_TAP: Record<string, { action: JiniusTap; label: string; busy: string }> = {
+  WaitingApproval: { action: "approve", label: "Approve on Jinius", busy: "Approving…" },
+  Approved: { action: "mark-paid", label: "Mark paid on Jinius", busy: "Marking paid…" },
+};
+
+/** An invoice's tap in flight, or its refusal, by invoice id. */
+type Taps = Record<string, { state: "busy" } | { state: "failed"; message: string }>;
+
+type JiniusRead = {
+  load: Load<JiniusFeed> | null;
+  read: () => void;
+  taps: Taps;
+  tap: (invoice: JiniusInvoice, action: JiniusTap) => void;
+};
 
 /** The Jinius read, held by the dashboard so a tab switch doesn't lose it or its answer. */
 function useJiniusRead(): JiniusRead {
   const fetcher = useContext(FetchContext);
   const [load, setLoad] = useState<Load<JiniusFeed> | null>(null);
+  const [taps, setTaps] = useState<Taps>({});
   const read = useCallback(() => {
+    setTaps({});
     setLoad({ state: "loading" });
     readJinius(fetcher).then(
       (data) => setLoad({ state: "ready", data }),
@@ -392,11 +411,41 @@ function useJiniusRead(): JiniusRead {
         }),
     );
   }, [fetcher]);
-  return { load, read };
+  const tap = useCallback(
+    (invoice: JiniusInvoice, action: JiniusTap) => {
+      setTaps((all) => ({ ...all, [invoice.id]: { state: "busy" } }));
+      tapJinius(invoice.id, action, fetcher).then(
+        (updated) => {
+          setLoad((current) =>
+            current?.state === "ready"
+              ? {
+                  state: "ready",
+                  data: {
+                    ...current.data,
+                    invoices: current.data.invoices.map((i) => (i.id === updated.id ? updated : i)),
+                  },
+                }
+              : current,
+          );
+          setTaps(({ [invoice.id]: _done, ...rest }) => rest);
+        },
+        (error: unknown) =>
+          setTaps((all) => ({
+            ...all,
+            [invoice.id]: {
+              state: "failed",
+              message: error instanceof ApiError ? error.message : "Jinius can't be reached, try again",
+            },
+          })),
+      );
+    },
+    [fetcher],
+  );
+  return { load, read, taps, tap };
 }
 
 /** Reads the invoices sent to the business from Jinius, only when the owner taps. */
-function JiniusTab({ load, read }: JiniusRead) {
+function JiniusTab({ load, read, taps, tap }: JiniusRead) {
   return (
     <div className="board-body">
       <section className="panel" aria-label="Invoices on Jinius">
@@ -411,12 +460,12 @@ function JiniusTab({ load, read }: JiniusRead) {
           {load.message}
         </p>
       ) : null}
-      {load?.state === "ready" ? <JiniusInvoices feed={load.data} /> : null}
+      {load?.state === "ready" ? <JiniusInvoices feed={load.data} taps={taps} tap={tap} /> : null}
     </div>
   );
 }
 
-function JiniusInvoices({ feed }: { feed: JiniusFeed }) {
+function JiniusInvoices({ feed, taps, tap }: { feed: JiniusFeed } & Pick<JiniusRead, "taps" | "tap">) {
   return (
     <section className="stack" aria-label="Invoices read from Jinius">
       <p className={feed.source === "live" ? "source live" : "source saved"}>
@@ -441,9 +490,36 @@ function JiniusInvoices({ feed }: { feed: JiniusFeed }) {
               </span>
               <span>{JINIUS_STATUS[invoice.status] ?? invoice.status}</span>
             </div>
+            {feed.source === "live" ? <JiniusAction invoice={invoice} taps={taps} tap={tap} /> : null}
           </article>
         ))
       )}
     </section>
+  );
+}
+
+/** The next step on Jinius for this invoice, if the owner can take one: saved data can't be acted on. */
+function JiniusAction({ invoice, taps, tap }: { invoice: JiniusInvoice } & Pick<JiniusRead, "taps" | "tap">) {
+  const next = JINIUS_TAP[invoice.status];
+  const state = taps[invoice.id];
+  if (next === undefined) return null;
+  return (
+    <>
+      <div className="actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={state?.state === "busy"}
+          onClick={() => tap(invoice, next.action)}
+        >
+          {state?.state === "busy" ? next.busy : next.label}
+        </button>
+      </div>
+      {state?.state === "failed" ? (
+        <p className="error small" role="alert">
+          {state.message}
+        </p>
+      ) : null}
+    </>
   );
 }
