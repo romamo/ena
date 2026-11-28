@@ -177,9 +177,20 @@ export async function decide(
   choice: "approve" | "decline",
   fetcher: typeof fetch = fetch,
 ): Promise<CardEvent> {
-  const response = await fetcher(`/approvals/${encodeURIComponent(approvalId)}/${choice}`, {
-    method: "POST",
-  });
+  return tap(`/approvals/${encodeURIComponent(approvalId)}/${choice}`, choice, fetcher);
+}
+
+/** The owner's tap on an event advance's offer card; answers with the receipt card. */
+export async function takeOffer(
+  offerId: string,
+  choice: "accept" | "decline",
+  fetcher: typeof fetch = fetch,
+): Promise<CardEvent> {
+  return tap(`/offers/${encodeURIComponent(offerId)}/${choice}`, choice, fetcher);
+}
+
+async function tap(path: string, choice: string, fetcher: typeof fetch): Promise<CardEvent> {
+  const response = await fetcher(path, { method: "POST" });
   const body: unknown = await response.json();
   if (!response.ok) {
     const detail = isRecord(body) && typeof body.detail === "string" ? body.detail : "";

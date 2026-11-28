@@ -148,6 +148,7 @@ One module (`ena/models.py`), written first by Roman (task 0.4). Amounts in euro
 Rules for tools:
 - Tools take ids, never amounts, for money actions: the amount always comes from the invoice or the rule, not from the LLM.
 - There is no tool to change the limit or approve a request. Approval comes only from the owner's tap in the UI.
+- There is no tool to accept an event advance either: the owner accepts or declines it with a tap on its offer card (`POST /offers/{id}/accept` or `/decline`).
 
 ---
 
@@ -187,6 +188,7 @@ Expected card sales = average weekly card sales over the last 4 weeks. `leanWeek
 1. From at least 10 completed events: deposit share of price, cost share of price, days before the event costs are paid, days after the event the final payment arrives, cancellation rate.
 2. For a booked event: costs expected before the event minus the deposit minus spare cash = gap.
 3. If gap > 0 and eligible (≥ 10 completed events, cancellations at most 1 in 10, **proposed**): advance = gap, due on the expected final-payment date, repaid from that payment through the gate.
+4. The owner accepts the offer with a tap on its card; the receipt says it is credited (simulated, no money moves). When the event's final payment posts to the statement (money in, the final payment's amount, its reference naming the event), Ena asks the gate to repay the accepted advance (ref `repay-<offer id>`): within the limit the gate pays, above it the owner approves. A simulated advance is never repaid through a bank that moves real money: the gate refuses a `repay-` ref on such a bank, at the request and at the owner's approval. The server has no statement feed yet, so the repayment runs in the tests and the replay, not in the demo app.
 
 Worked example (synthetic): €8,000 wedding, 25% deposit (€2,000), costs 60% (€4,800) paid 3–7 days before, spare cash €1,000 → gap €1,800 → advance €1,800 for 16 days, repaid from the €6,000 final payment.
 

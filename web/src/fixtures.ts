@@ -57,6 +57,35 @@ export const LOAN: CardEvent = {
   },
 };
 
+export const ADVANCE: CardEvent = {
+  kind: "card",
+  card_kind: "offer",
+  card: {
+    id: "advance-syn-event-0014-280000",
+    kind: "event_advance",
+    amount_cents: 280000,
+    term_days: 16,
+    basis: { gap_cents: 280000, spare_cents: 0 },
+    simulated: true,
+  },
+};
+
+export const ACCEPTED: CardEvent = {
+  kind: "card",
+  card_kind: "receipt",
+  card: {
+    id: "receipt-accept-advance-syn-event-0014-280000",
+    at: "2026-11-16T09:05:00Z",
+    actor: "owner",
+    action: "Accept the event advance for Georgiou wedding (synthetic) (simulated)",
+    amount_cents: 280000,
+    ref: "accept-advance-syn-event-0014-280000",
+    result: "accepted",
+    explanation: "Accepted by the owner. Simulated: there is no lending API, no money moved",
+    simulated: false,
+  },
+};
+
 export const DECLINED: CardEvent = {
   kind: "card",
   card_kind: "receipt",

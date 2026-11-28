@@ -2,6 +2,7 @@ import { createContext, useContext, useState } from "react";
 import {
   ApiError,
   decide,
+  takeOffer,
   type ApprovalCard,
   type CardEvent,
   type ForecastCard,
@@ -149,7 +150,28 @@ const OFFER_TITLE: Record<OfferCard["kind"], string> = {
   event_advance: "Event advance",
 };
 
+type OfferTap =
+  | { state: "open" }
+  | { state: "sending"; choice: "accept" | "decline" }
+  | { state: "decided"; receipt: CardEvent }
+  | { state: "failed"; message: string };
+
 function Offer({ card }: { card: OfferCard }) {
+  const fetcher = useContext(FetchContext);
+  const [tap, setTap] = useState<OfferTap>({ state: "open" });
+  // Only an event advance is taken on its card; the reserve and the loan are offers to read
+  const takeable = card.kind === "event_advance";
+
+  async function choose(choice: "accept" | "decline") {
+    setTap({ state: "sending", choice });
+    try {
+      setTap({ state: "decided", receipt: await takeOffer(card.id, choice, fetcher) });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : String(error);
+      setTap({ state: "failed", message });
+    }
+  }
+
   return (
     <article className="card offer" aria-label="Offer">
       <header>
@@ -167,6 +189,31 @@ function Offer({ card }: { card: OfferCard }) {
           Pre-filled, not an application and not a promise: the bank decides.
         </p>
       ) : null}
+      {takeable && tap.state !== "decided" ? (
+        <div className="actions">
+          <button
+            type="button"
+            className="primary"
+            disabled={tap.state === "sending"}
+            onClick={() => void choose("accept")}
+          >
+            {tap.state === "sending" && tap.choice === "accept" ? "Accepting…" : "Accept"}
+          </button>
+          <button
+            type="button"
+            disabled={tap.state === "sending"}
+            onClick={() => void choose("decline")}
+          >
+            Decline
+          </button>
+        </div>
+      ) : null}
+      {tap.state === "failed" ? (
+        <p className="error" role="alert">
+          {tap.message}
+        </p>
+      ) : null}
+      {tap.state === "decided" ? <Card event={tap.receipt} /> : null}
     </article>
   );
 }
