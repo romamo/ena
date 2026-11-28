@@ -207,6 +207,10 @@ class Ledger:
         parts += [f"sale {s.jcc_order_id}" for s in self._store.card_sales()]
         return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
 
+    def live_sale_ids(self) -> frozenset[str]:
+        """The ids of the card sales booked from JCC's callback, not from the seed."""
+        return frozenset(sale.id for sale in self._store.card_sales())
+
     def card_sales(self, before: dt.date) -> list[CardSale]:
         """The seed's card sales and those booked from JCC, dated before `before`."""
         sales = {sale.jcc_order_id: sale for sale in self._store.card_sales()}
@@ -544,7 +548,14 @@ class EnaTools:
     def get_books(self, from_date: str, to_date: str) -> BooksResult:
         first, last = _date(from_date, "from"), _date(to_date, "to")
         lines = self._ledger.transactions(first, last)
-        sales = [s for s in self._ledger.card_sales(last + dt.timedelta(days=1)) if s.date >= first]
+        # A month's sale after today has not happened yet; one JCC confirmed has, whatever
+        # its real date against the demo's day
+        today, live = self._ledger.today(), self._ledger.live_sale_ids()
+        sales = [
+            s
+            for s in self._ledger.card_sales(last + dt.timedelta(days=1))
+            if s.date >= first and (s.date <= today or s.id in live)
+        ]
         books: Books = match_books(self._ledger.invoices(), sales, lines)
         return BooksResult(
             from_date=first,
@@ -557,7 +568,13 @@ class EnaTools:
             matched_card_sales=len(books.sale_matches),
             unmatched_invoices=tuple(_invoice(i) for i in books.unmatched_invoices),
             unmatched_card_sales=tuple(
-                f"{s.id} {s.date} {euros(s.amount_cents)}" for s in books.unmatched_sales
+                f"{s.id} {s.date} {euros(s.amount_cents)}"
+                + (
+                    ": a card payment JCC confirmed, booked live; not settled to the account yet"
+                    if s.id in live
+                    else ""
+                )
+                for s in books.unmatched_sales
             ),
             unmatched_payments=tuple(_transaction(tx) for tx in books.unmatched_payments),
             unmatched_deposits=tuple(_transaction(tx) for tx in books.unmatched_deposits),

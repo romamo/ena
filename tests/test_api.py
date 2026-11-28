@@ -401,6 +401,7 @@ def test_the_jcc_callback_is_still_served(api: Api) -> None:
         ("It is not paid yet: it waits for your approval.", False),
         ("You have two unpaid invoices.", False),
         ("I haven't paid it.", False),
+        ("Nothing has been paid yet: the sale is booked when JCC confirms it.", False),
         ("Your balance is €1,120.00.", False),
     ],
 )

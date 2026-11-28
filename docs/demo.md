@@ -81,7 +81,7 @@ In the test Merchant Portal, set the webhook (Settings → Merchant → Webhooks
 3. About 10 seconds later the `ena-serve` terminal logs `POST /jcc/callback` with 200: the sale is booked as `jcc-<order id>`
 4. "Show my books from 16 to 30 November": the €15.00 sale, unmatched until JCC settles it to the account
 
-A live sale is dated the real day, not the demo's 16 November, so it shows in the books but not in the forecast. If no callback comes within about 20 seconds, say so and move on.
+A live sale is dated the real day, not the demo's 16 November, so it shows in the books but not in the forecast. If no callback comes within about 20 seconds, say so and move on. `JCC_RETURN_URL` can be the tunnel's address: Ena serves no page there, so the phone shows "not found" after paying, which doesn't affect the booking.
 
 ## If the laptops can't see each other
 

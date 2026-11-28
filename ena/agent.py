@@ -219,7 +219,7 @@ _CLAIM = re.compile(
     re.IGNORECASE,
 )
 _NEGATION = re.compile(
-    r"\b(?:not|never|no|yet to)\b|n't\b|\bδεν\b|\bόχι\b",  # noqa: RUF001
+    r"\b(?:not|never|no|nothing|yet to)\b|n't\b|\bδεν\b|\bόχι\b",  # noqa: RUF001
     re.IGNORECASE,
 )
 _LOOKBEHIND = 24

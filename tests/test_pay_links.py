@@ -23,7 +23,7 @@ from ena.mcp_server import (
     ToolError,
     call_tool,
 )
-from ena.models import PayLink, Receipt
+from ena.models import CardSale, PayLink, Receipt
 from ena.seed import LEAN_WEEK, synthetic_month
 from ena.store import Store
 
@@ -239,6 +239,27 @@ def test_the_tool_runs_through_call_tool() -> None:
         call_tool(t, "create_pay_link", {"amount_cents": 1500, "description": "Two loaves"})
     )
     assert json.loads(text)["pay_link"]["url"] == FORM_URL
+
+
+def test_the_books_show_a_live_sale_after_today_and_no_seed_sale_after_today() -> None:
+    t, store = tools(None)
+    live = CardSale(
+        id=f"jcc-{ORDER_ID}",
+        amount_cents=1500,
+        date=dt.date(2026, 11, 28),
+        jcc_order_id=ORDER_ID,
+        status="deposited",
+    )
+    store.add_card_sale(live)
+    books = t.get_books(str(LEAN_WEEK), "2026-11-30")
+    dates = {line.split()[1] for line in books.unmatched_card_sales}
+    assert max(d for d in dates if d != "2026-11-28") <= str(LEAN_WEEK)
+    (line,) = [line for line in books.unmatched_card_sales if line.startswith(live.id)]
+    assert line == (
+        f"{live.id} 2026-11-28 €15.00: a card payment JCC confirmed, booked live;"
+        " not settled to the account yet"
+    )
+    assert "paid" not in line
 
 
 # The card
