@@ -1,0 +1,101 @@
+{
+  "_note": "POST getOrderStatusExtended.do after the callback; payer email, IP and cardholder name replaced",
+  "request": {
+    "orderId": "d7772205-fe5a-7f7a-832c-cc3a2eff63a5",
+    "language": "en"
+  },
+  "response": {
+    "errorCode": "0",
+    "errorMessage": "Success",
+    "orderNumber": "ENA-20261128095208",
+    "orderStatus": 2,
+    "actionCode": 0,
+    "actionCodeDescription": "Request is processed successfully",
+    "displayErrorMessage": "Operation completed successfully.",
+    "amount": 1500,
+    "currency": "978",
+    "date": 1795859528680,
+    "depositedDate": 1795859592073,
+    "orderDescription": "Ena test: two loaves and a coffee",
+    "ip": "203.0.113.10",
+    "merchantOrderParams": [
+      {
+        "name": "browser_language_param",
+        "value": "en"
+      },
+      {
+        "name": "paymentReferer",
+        "value": "https://gateway-test.jcc.com.cy"
+      },
+      {
+        "name": "browser_os_param",
+        "value": "MAC_OS_X"
+      },
+      {
+        "name": "browser_version_param",
+        "value": "158.0.0.0"
+      },
+      {
+        "name": "user_agent",
+        "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36"
+      },
+      {
+        "name": "browser_name_param",
+        "value": "CHROME"
+      }
+    ],
+    "transactionAttributes": [
+      {
+        "name": "merchantIp",
+        "value": "203.0.113.10"
+      },
+      {
+        "name": "schemeTransactionId",
+        "value": "82904608514137803072"
+      },
+      {
+        "name": "dynamicCallbackUrl",
+        "value": "https://<tunnel>/jcc/callback"
+      },
+      {
+        "name": "paymentNetRefNum",
+        "value": "67226232600497447121"
+      }
+    ],
+    "attributes": [
+      {
+        "name": "mdOrder",
+        "value": "d7772205-fe5a-7f7a-832c-cc3a2eff63a5"
+      }
+    ],
+    "cardAuthInfo": {
+      "maskedPan": "444455**3333",
+      "expiration": "202612",
+      "cardholderName": "ASD AS",
+      "approvalCode": "123456",
+      "paymentSystem": "VISA",
+      "pan": "444455**3333"
+    },
+    "authDateTime": 1795859591762,
+    "terminalId": "65433663",
+    "authRefNum": "111111111111",
+    "paymentAmountInfo": {
+      "paymentState": "DEPOSITED",
+      "approvedAmount": 1500,
+      "depositedAmount": 1500,
+      "refundedAmount": 0,
+      "feeAmount": 0,
+      "totalAmount": 1500
+    },
+    "bankInfo": {
+      "bankName": "TEST BANK-C",
+      "bankCountryCode": "HU",
+      "bankCountryName": "Hungary"
+    },
+    "payerData": {
+      "email": "payer@example.com"
+    },
+    "chargeback": false,
+    "paymentWay": "CARD"
+  }
+}
