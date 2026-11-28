@@ -520,7 +520,9 @@ def result(*, error: bool = False) -> ResultMessage:
 
 def replies(*messages: object) -> list[str]:
     ena, _ = build(LEAN_WEEK, cache=None)
-    agent = ClaudeAgent(AgentSettings(_env_file=None), build_server(ena.agent.tools))
+    agent = ClaudeAgent(
+        AgentSettings(_env_file=None), build_server(ena.agent.tools), ena.agent.tools.today
+    )
 
     async def stream() -> AsyncIterator[object]:
         for message in messages:
@@ -586,7 +588,9 @@ def test_the_stream_is_read_to_its_end_after_the_result() -> None:
                 yield message
 
     ena, _ = build(LEAN_WEEK, cache=None)
-    agent = ClaudeAgent(AgentSettings(_env_file=None), build_server(ena.agent.tools))
+    agent = ClaudeAgent(
+        AgentSettings(_env_file=None), build_server(ena.agent.tools), ena.agent.tools.today
+    )
 
     async def collect() -> list[str]:
         return [piece async for piece in agent.replies(Recording())]
