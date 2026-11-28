@@ -45,6 +45,7 @@ from ena.mcp_server import EnaTools, Ledger, ReplayDay, allowed_tools, build_ser
 from ena.models import Actor, Receipt
 from ena.replay import DayStarted
 from ena.seed import BOOKED_EVENT_ID, LEAN_WEEK, SEED, synthetic_month
+from ena.server import from_values
 from ena.store import Store
 
 MONTH = synthetic_month()
@@ -523,7 +524,7 @@ def test_the_cache_refuses_money_replies_and_empty_questions() -> None:
 
 def test_the_agent_sees_only_enas_tools_and_no_secret() -> None:
     ena, _ = build(LEAN_WEEK, cache=None)
-    settings = AgentSettings(_env_file=None, model="claude-test-model")
+    settings = from_values(AgentSettings, {"model": "claude-test-model"})
     tools = ena.agent.tools
     options = ClaudeAgent(settings, build_server(tools), tools.today).options()
     assert options.model == "claude-test-model"
@@ -547,7 +548,7 @@ def test_the_system_prompt_gives_the_business_day_not_the_clock() -> None:
 
 
 def test_the_default_model() -> None:
-    assert AgentSettings(_env_file=None).model == "claude-opus-5-5"
+    assert from_values(AgentSettings, {}).model == "claude-opus-5-5"
 
 
 def test_the_system_prompt_carries_the_answer_rules() -> None:
@@ -580,7 +581,7 @@ def result(*, error: bool = False) -> ResultMessage:
 def replies(*messages: object) -> list[str]:
     ena, _ = build(LEAN_WEEK, cache=None)
     agent = ClaudeAgent(
-        AgentSettings(_env_file=None), build_server(ena.agent.tools), ena.agent.tools.today
+        from_values(AgentSettings, {}), build_server(ena.agent.tools), ena.agent.tools.today
     )
 
     async def stream() -> AsyncIterator[object]:
@@ -648,7 +649,7 @@ def test_the_stream_is_read_to_its_end_after_the_result() -> None:
 
     ena, _ = build(LEAN_WEEK, cache=None)
     agent = ClaudeAgent(
-        AgentSettings(_env_file=None), build_server(ena.agent.tools), ena.agent.tools.today
+        from_values(AgentSettings, {}), build_server(ena.agent.tools), ena.agent.tools.today
     )
 
     async def collect() -> list[str]:

@@ -65,6 +65,7 @@ export function Dashboard({
   busy,
 }: { open: boolean; tab: BoardTab; onTab: (tab: BoardTab) => void } & Ask) {
   const [version, setVersion] = useState(0);
+  const jinius = useJiniusRead();
   const reread = useCallback(() => setVersion((v) => v + 1), []);
   const props = { open, version, onAsk, busy };
   return (
@@ -89,7 +90,7 @@ export function Dashboard({
           {tab === "receipts" ? <ReceiptsTab {...props} /> : null}
           {tab === "forecast" ? <ForecastTab {...props} /> : null}
           {tab === "credit" ? <CreditTab {...props} /> : null}
-          {tab === "jinius" ? <JiniusTab /> : null}
+          {tab === "jinius" ? <JiniusTab {...jinius} /> : null}
         </div>
       </OnDecided>
     </section>
@@ -374,11 +375,13 @@ const JINIUS_STATUS: Record<string, string> = {
   Voided: "Voided",
 };
 
-/** Reads the invoices sent to the business from Jinius, only when the owner taps. */
-function JiniusTab() {
+type JiniusRead = { load: Load<JiniusFeed> | null; read: () => void };
+
+/** The Jinius read, held by the dashboard so a tab switch doesn't lose it or its answer. */
+function useJiniusRead(): JiniusRead {
   const fetcher = useContext(FetchContext);
   const [load, setLoad] = useState<Load<JiniusFeed> | null>(null);
-  const read = () => {
+  const read = useCallback(() => {
     setLoad({ state: "loading" });
     readJinius(fetcher).then(
       (data) => setLoad({ state: "ready", data }),
@@ -388,7 +391,12 @@ function JiniusTab() {
           message: error instanceof ApiError ? error.message : "Jinius can't be reached, try again",
         }),
     );
-  };
+  }, [fetcher]);
+  return { load, read };
+}
+
+/** Reads the invoices sent to the business from Jinius, only when the owner taps. */
+function JiniusTab({ load, read }: JiniusRead) {
   return (
     <div className="board-body">
       <section className="panel" aria-label="Invoices on Jinius">

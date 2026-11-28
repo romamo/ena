@@ -34,6 +34,7 @@ from ena.server import (
     Server,
     ServeSettings,
     build,
+    from_values,
     has_model_credential,
     load_settings,
     parser,
@@ -74,7 +75,7 @@ def settings(**changes: Any) -> ServeSettings:
         "store": None,
         "day": LEAN_WEEK,
         "cache": None,
-        "agent": AgentSettings(_env_file=None),
+        "agent": from_values(AgentSettings, {}),
         "jcc": None,
         "jinius": None,
         "model_credential": False,
@@ -355,3 +356,28 @@ def test_jinius_settings_from_an_env_file(tmp_path: Path) -> None:
     loaded = load_settings(parser().parse_args(["--memory"]), {}, env)
     assert loaded.jinius is not None
     assert loaded.jinius.client_id == "buyer"
+
+
+def test_settings_come_from_the_given_environment_over_the_env_file(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("JINIUS_CLIENT_ID=from-file\nJINIUS_CLIENT_SECRET=s\n", encoding="utf-8")
+    environ = {"JINIUS_CLIENT_ID": "from-shell", "PATH": "/bin"}
+    loaded = load_settings(parser().parse_args(["--memory"]), environ, env)
+    assert loaded.jinius is not None
+    assert loaded.jinius.client_id == "from-shell"
+
+
+def test_a_variable_outside_the_given_environment_is_not_read(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("", encoding="utf-8")
+    # The test process may hold JINIUS_* or JCC_*: only `environ` reaches the settings
+    loaded = load_settings(parser().parse_args(["--memory"]), {}, env)
+    assert (loaded.jinius, loaded.jcc) == (None, None)
+    assert loaded.agent.model == "claude-opus-5-5"
+
+
+def test_a_variable_naming_a_settings_init_argument_is_dropped(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("ENA__CLI_PARSE_ARGS=true\nENA_MODEL=claude-test\n", encoding="utf-8")
+    loaded = load_settings(parser().parse_args(["--memory"]), {}, env)
+    assert loaded.agent.model == "claude-test"

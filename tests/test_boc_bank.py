@@ -24,7 +24,7 @@ from ena.connectors.boc_bank import ACCOUNT_TTL, AccountReads, BocBank
 from ena.gate import BankUnavailable
 from ena.mcp_server import EnaTools, call_tool
 from ena.seed import LEAN_WEEK, synthetic_month
-from ena.server import ServeSettings, build, load_boc
+from ena.server import ServeSettings, build, from_values, load_boc
 from ena.store import Store
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "boc"
@@ -225,7 +225,7 @@ def test_ena_serve_refuses_the_same_settings_at_start(tmp_path: Path) -> None:
     env.write_text("BOC_CLIENT_ID=app-id\nBOC_CLIENT_SECRET=s\n", encoding="utf-8")
 
     with pytest.raises(SystemExit, match="BOC_SUBSCRIPTION_ID and BOC_ACCOUNT_ID"):
-        load_boc(env)
+        load_boc(env, {})
 
     env.write_text(
         "BOC_CLIENT_ID=app-id\nBOC_CLIENT_SECRET=s\nBOC_SUBSCRIPTION_ID=sub-1\n"
@@ -233,10 +233,10 @@ def test_ena_serve_refuses_the_same_settings_at_start(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(SystemExit, match="BOC_REDIRECT_URI"):
-        load_boc(env)
+        load_boc(env, {})
 
     env.write_text(env.read_text(encoding="utf-8") + f"BOC_REDIRECT_URI={REDIRECT}\n", "utf-8")
-    assert load_boc(env).account_id == ACCOUNT
+    assert load_boc(env, {}).account_id == ACCOUNT
 
 
 # ena-serve --bank boc
@@ -279,7 +279,7 @@ def http(sandbox: Sandbox) -> Iterator[TestClient]:
         store=None,
         day=LEAN_WEEK,
         cache=None,
-        agent=AgentSettings(_env_file=None),
+        agent=from_values(AgentSettings, {}),
         jcc=None,
         model_credential=False,
         boc=boc_settings(),

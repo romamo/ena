@@ -23,6 +23,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -256,6 +257,8 @@ class JiniusClient:
         self.clock = clock
         self._token: AccessToken | None = None
         self._token_until = 0.0
+        self._token_lock = threading.RLock()
+        """The app reads from FastAPI's threadpool: one token fetch at a time."""
 
     def payable_invoices(self) -> list[Document]:
         """Every invoice sent to our legal entity, all pages."""
@@ -290,27 +293,29 @@ class JiniusClient:
     # Plumbing
 
     def _bearer(self) -> str:
-        token = self._token
-        if token is None or self.clock() >= self._token_until:
-            token = self._fetch_token()
-        return token.bearer()
+        with self._token_lock:
+            token = self._token
+            if token is None or self.clock() >= self._token_until:
+                token = self._fetch_token()
+            return token.bearer()
 
     def _fetch_token(self) -> AccessToken:
-        response = self._send(
-            "POST",
-            f"{self.settings.base_url}/oauth/token",
-            data={
-                "grant_type": "client_credentials",
-                "client_id": self.settings.client_id,
-                "client_secret": self.settings.client_secret.get_secret_value(),
-            },
-        )
-        if response.is_error:
-            raise JiniusError(f"token request -> {response.status_code}: {response.text[:300]}")
-        token = AccessToken.model_validate(response.json())
-        self._token = token
-        self._token_until = self.clock() + token.expires_in - TOKEN_MARGIN_SECONDS
-        return token
+        with self._token_lock:
+            response = self._send(
+                "POST",
+                f"{self.settings.base_url}/oauth/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self.settings.client_id,
+                    "client_secret": self.settings.client_secret.get_secret_value(),
+                },
+            )
+            if response.is_error:
+                raise JiniusError(f"token request -> {response.status_code}: {response.text[:300]}")
+            token = AccessToken.model_validate(response.json())
+            self._token = token
+            self._token_until = self.clock() + token.expires_in - TOKEN_MARGIN_SECONDS
+            return token
 
     def _call(
         self,
@@ -375,17 +380,22 @@ class PayableInvoice(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    number: str
+    number: str = Field(min_length=1)
     """The invoice number (`documentNumber`), such as `EFM-2026-002`."""
-    supplier: str
+    supplier: str = Field(min_length=1)
     amount_cents: int
+    """In euro cents: an invoice in another currency is refused, not shown as euro."""
     issue_date: dt.date
     due_date: dt.date | None
-    status: str
+    status: str = Field(min_length=1)
     """Jinius's own status, such as `WaitingApproval`."""
 
     @classmethod
     def of(cls, document: Document) -> PayableInvoice:
+        if document.kind != "Invoice":
+            raise JiniusError(f"{document.document_number} is a {document.kind}, not an invoice")
+        if document.currency != "EUR":
+            raise JiniusError(f"{document.document_number} is in {document.currency}, not EUR")
         if document.issuer is None:
             raise JiniusError(f"{document.document_number} names no supplier")
         return cls(
