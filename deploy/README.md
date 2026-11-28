@@ -42,7 +42,7 @@ Write the server's secrets to a private env file under `tmp/` (never committed):
 
 ```bash
 umask 077 && mkdir -p tmp/env && grep -E '^(ANTHROPIC_API_KEY|JINIUS_CLIENT_ID|JINIUS_CLIENT_SECRET|BOC_CLIENT_ID|BOC_CLIENT_SECRET|BOC_SUBSCRIPTION_ID|BOC_ACCOUNT_ID|JCC_API_USER|JCC_API_PASSWORD|JCC_CALLBACK_SECRET)=' ../.env > tmp/env/ena.env
-printf 'BOC_REDIRECT_URI=https://ena.cloudfall.dev/boc/consent\nJCC_RETURN_URL=https://ena.cloudfall.dev/\n' >> tmp/env/ena.env
+printf 'BOC_REDIRECT_URI=https://ena.cloudfall.dev/boc/consent\nJCC_RETURN_URL=https://ena.cloudfall.dev/jcc/paid\n' >> tmp/env/ena.env
 uv run cloudfall deploy ena --release <release> --env-file tmp/env/ena.env --yes
 rm tmp/env/ena.env
 ```

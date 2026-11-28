@@ -59,6 +59,12 @@ id that isn't a Jinius document id with 404.
    mismatch is refused with 409, books nothing, and JCC retries it
 5. The `CardSale` is booked in the store and the callback answered 200
 
+`GET /jcc/paid` is the page the customer's browser lands on after JCC's payment page, the
+`returnUrl` of every pay link (`JCC_RETURN_URL=<host>/jcc/paid`). It is for the customer,
+not the owner: it reads nothing, books nothing, shows nothing of the business, and links
+nowhere in Ena. It claims no result either, since JCC may send a declined payment back
+there too and the callback, not the browser, books the sale.
+
 JCC treats any answer but 200 as a failure and retries every 30 s, up to 6 times.
 The callback secret never appears in an answer.
 """
@@ -294,6 +300,11 @@ def create_app(
             except ProcurementError as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
 
+    @app.get("/jcc/paid", response_class=HTMLResponse)
+    @app.get("/jcc/paid/", response_class=HTMLResponse, include_in_schema=False)
+    async def jcc_paid() -> HTMLResponse:
+        return HTMLResponse(PAYER_PAGE, headers={"Cache-Control": "no-store"})
+
     @app.post("/jcc/callback")
     async def jcc_callback(request: Request) -> CallbackAnswer:
         fields = await _form_fields(request)
@@ -331,6 +342,22 @@ def create_app(
         return CallbackAnswer(result="booked", jcc_order_id=order)
 
     return app
+
+
+PAYER_PAGE = (
+    "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+    "<meta name='robots' content='noindex'>"
+    "<title>Thank you</title>"
+    "<style>body{font:18px system-ui,sans-serif;margin:3rem 1.25rem;max-width:30rem;"
+    "line-height:1.45}h1{font-size:1.6rem}p{color:#444}</style>"
+    "</head><body><h1>Thank you</h1>"
+    "<p>Your card payment went to JCC. If JCC accepted it, it's done: the business sees"
+    " it within a few seconds, and there is nothing more to do.</p>"
+    "<p>If your card was declined, nothing was taken; ask the business for a new link.</p>"
+    "<p>You can close this page.</p></body></html>"
+)
+"""The customer's page after paying a pay link: no business data, no link into Ena."""
 
 
 def _page(status: int, title: str, message: str, *, close: bool = False) -> HTMLResponse:
