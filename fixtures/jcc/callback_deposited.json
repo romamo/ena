@@ -1,0 +1,15 @@
+{
+  "_note": "JCC sandbox webhook, 2026-11-28: static URL, POST, symmetric signing. The checksum is HMAC-SHA256 of the fields with the sandbox secret, which is not in the repo",
+  "method": "POST",
+  "content_type": "application/x-www-form-urlencoded; charset=UTF-8",
+  "user_agent": "Chrome/80.0.3987.116",
+  "sender_ip": "3.126.133.76",
+  "raw_body": "checksum=7C4BD51630E0E27BC5FE72BEDA1CA4D4FCCD4B4271B16C5CE27E81BA9FB3E7F9&orderNumber=ENA-20261128095208&mdOrder=d7772205-fe5a-7f7a-832c-cc3a2eff63a5&operation=deposited&status=1",
+  "fields": {
+    "checksum": "7C4BD51630E0E27BC5FE72BEDA1CA4D4FCCD4B4271B16C5CE27E81BA9FB3E7F9",
+    "orderNumber": "ENA-20261128095208",
+    "mdOrder": "d7772205-fe5a-7f7a-832c-cc3a2eff63a5",
+    "operation": "deposited",
+    "status": "1"
+  }
+}

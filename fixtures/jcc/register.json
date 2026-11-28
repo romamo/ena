@@ -1,0 +1,17 @@
+{
+  "_note": "POST register.do, form-encoded; userName and password are sent too and left out here",
+  "request": {
+    "orderNumber": "ENA-20261128095208",
+    "amount": "1500",
+    "currency": "978",
+    "returnUrl": "https://<tunnel>/return",
+    "failUrl": "https://<tunnel>/fail",
+    "description": "Ena test: two loaves and a coffee",
+    "dynamicCallbackUrl": "https://<tunnel>/jcc/callback",
+    "language": "en"
+  },
+  "response": {
+    "orderId": "d7772205-fe5a-7f7a-832c-cc3a2eff63a5",
+    "formUrl": "https://gateway-test.jcc.com.cy/payment/merchants/multiecom/payment.html?mdOrder=d7772205-fe5a-7f7a-832c-cc3a2eff63a5&language=en"
+  }
+}

@@ -12,6 +12,21 @@ Sources:
 - Test cards: https://gateway.jcc.com.cy/developer/en/integration/structure/test-cards.html
 - Test to production: https://gateway.jcc.com.cy/developer/en/integration/structure/test-to-production.html
 
+## 0. Sandbox, as tried (2026-11-28)
+
+Two €15 test payments with `4444 5555 1111 3333` on a self-service sandbox. Where this section and the rest disagree, this section wins. The saved responses are in `fixtures/jcc/`.
+
+- **Sign-up:** `gateway.jcc.com.cy/developer/cabinet/` ("Your Sandboxes", JCC eCommerce gateway) gives a test merchant, the test Merchant Portal and an API user whose login ends in `-api`. No approval wait
+- **`register.do`** (`register.json`): form-encoded `userName`, `password`, `orderNumber`, `amount=1500`, `currency=978`, `returnUrl`, `failUrl`, `description`, `dynamicCallbackUrl`, `language`. The answer is just `orderId` and `formUrl`; on success it has no `errorCode`
+- **Callback** (`callback_deposited.json`): it arrived only after the webhook was set to **Static** with the URL filled in and saved (Settings → Merchant → Webhooks; POST, symmetric, operations Deposited, Approved, Declined by timeout). The first payment, which relied on `dynamicCallbackUrl` alone, got no callback, although the order recorded that URL. Whether Dynamic works once it is saved properly is UNKNOWN; Static is the setting that works
+  - One request per payment, about 10 s after the deposit: `POST`, `application/x-www-form-urlencoded; charset=UTF-8`, body `checksum`, `orderNumber`, `mdOrder`, `operation=deposited`, `status=1`. **No separate `approved` callback** for a one-phase payment, even with Approved ticked, and no `callbackCreationDate`
+  - **Checksum VERIFIED:** HMAC-SHA256 of the other fields sorted by name, each as `name;value;`, with the signing secret, uppercase hex: matched as section 3 describes. It is on by default in the sandbox
+  - Sender `3.126.133.76`, `User-Agent: Chrome/80.0.3987.116`; no custom headers
+  - It reached an ngrok tunnel (`*.ngrok-free.dev`) over HTTPS. ngrok's free browser warning does not block a server-to-server POST
+- **`returnUrl`:** neither payment's browser came back to it through the tunnel. The card page's redirect wasn't observed, so don't rely on `returnUrl` for booking
+- **`getOrderStatusExtended.do`** (`order_status_deposited.json`): `orderStatus: 2`, `actionCode: 0`, `amount: 1500`, `currency: "978"` (a string), `date` and `depositedDate` as epoch milliseconds, `paymentAmountInfo.paymentState: "DEPOSITED"` with `approvedAmount`, `depositedAmount`, `feeAmount`. The card comes back masked (`444455**3333`). The payer's email, IP and cardholder name are in it too: the fixture replaces them
+- **For the connector and the callback endpoint (#9):** book the sale on `operation=deposited` and `status=1` after the checksum, then confirm with `getOrderStatusExtended.do` (`orderStatus` 2, amount); key it on `mdOrder`, which equals the `orderId` from `register.do`
+
 ## 1. Access
 
 - **Sandbox sign-up:** the portal links "Create Sandbox" to `https://gateway.jcc.com.cy/developer/cabinet/index.html#/` (a JavaScript app; its public page shows no fields, terms or description). What a sign-up issues is UNKNOWN; the docs imply a test merchant with a Personal Area (operator) login and an API user
