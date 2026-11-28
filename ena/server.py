@@ -41,6 +41,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ena.advances import Advances
 from ena.agent import AgentError, AgentRunner, AgentSettings, Chat, ClaudeAgent
 from ena.api import create_app
 from ena.cache import ReplyCache
@@ -203,6 +204,7 @@ def build(
         jcc_settings.callback_secret,
         chat=chat,
         gate=gate,
+        advances=Advances(store, gate, month.events, _now),
     )
     if settings.jcc is None:
         _refuse_callbacks(app)

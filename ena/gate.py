@@ -76,6 +76,11 @@ class Gate:
         self._simulated = is_simulated(bank)
         self._clock = clock
 
+    @property
+    def simulated(self) -> bool:
+        """Whether the gate's bank moves no money (the stand-in)."""
+        return self._simulated
+
     def request_payment(
         self, action: str, amount_cents: int, ref: str
     ) -> Receipt | ApprovalRequest:

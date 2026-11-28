@@ -12,6 +12,11 @@ an approval card. They call the gate's approval path directly, never the agent, 
 answer with the receipt card; an unknown or already decided approval is refused with
 409. No tool can reach these: approval comes only from the owner (§5).
 
+`POST /offers/{id}/accept` and `POST /offers/{id}/decline` are the owner's tap on an
+event advance's offer card (`ena/advances.py`). They answer with the receipt card; an
+unknown or already decided offer, or a second accepted advance for an event, is refused
+with 409. No tool can reach these either.
+
 `POST /jcc/callback` takes JCC's form-encoded webhook (docs/jcc-notes.md §0, §7 step 4):
 
 1. The checksum is verified first; a missing or wrong one is refused with 403, books nothing
@@ -35,6 +40,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel, ConfigDict, SecretStr, StringConstraints, ValidationError
 
+from ena.advances import AdvanceError, Advances
 from ena.agent import CardEvent, Chat, card_event
 from ena.connectors.jcc import (
     Callback,
@@ -77,10 +83,12 @@ def create_app(
     *,
     chat: Chat | None = None,
     gate: Gate | None = None,
+    advances: Advances | None = None,
 ) -> FastAPI:
     """The API, booking into `store` and confirming deposits through `jcc`.
 
-    With `chat` it serves `POST /chat`; with `gate`, the owner's approve and decline.
+    With `chat` it serves `POST /chat`; with `gate`, the owner's approve and decline; with
+    `advances`, the owner's accept and decline of an event advance.
     """
     if not callback_secret.get_secret_value():
         # An empty key would accept any callback signed with HMAC-SHA256 keyed with b""
@@ -110,6 +118,23 @@ def create_app(
             try:
                 return card_event(owner_gate.decline(approval_id))
             except GateError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+    if advances is not None:
+        owner_advances = advances
+
+        @app.post("/offers/{offer_id}/accept")
+        async def accept_offer(offer_id: str) -> CardEvent:
+            try:
+                return card_event(owner_advances.accept(offer_id))
+            except AdvanceError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+        @app.post("/offers/{offer_id}/decline")
+        async def decline_offer(offer_id: str) -> CardEvent:
+            try:
+                return card_event(owner_advances.decline(offer_id))
+            except AdvanceError as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.post("/jcc/callback")

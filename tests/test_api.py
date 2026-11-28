@@ -15,6 +15,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from ena.advances import Advances
 from ena.agent import (
     SECRET_ENV,
     SYSTEM_PROMPT,
@@ -32,7 +33,8 @@ from ena.connectors.jcc import JccClient, JccSettings
 from ena.gate import Gate
 from ena.mcp_server import EnaTools, Ledger, ReplayDay, allowed_tools, build_server, call_tool
 from ena.models import Actor, Receipt
-from ena.seed import LEAN_WEEK, SEED, synthetic_month
+from ena.replay import DayStarted
+from ena.seed import BOOKED_EVENT_ID, LEAN_WEEK, SEED, synthetic_month
 from ena.store import Store
 
 MONTH = synthetic_month()
@@ -127,7 +129,12 @@ def build(day: dt.date, cache: ReplyCache | None) -> tuple[Api, TestClient]:
     )
     jcc = JccClient(settings, httpx.AsyncClient(transport=httpx.MockTransport(_no_network)))
     app = create_app(
-        store, jcc, settings.callback_secret, chat=Chat(tools, agent, today, cache), gate=gate
+        store,
+        jcc,
+        settings.callback_secret,
+        chat=Chat(tools, agent, today, cache),
+        gate=gate,
+        advances=Advances(store, gate, MONTH.events, lambda: NOW),
     )
     http = TestClient(app)
     return Api(http, store, bank, agent, today), http
@@ -258,6 +265,30 @@ def test_the_owner_declines_and_nothing_is_paid(api: Api) -> None:
 def test_an_unknown_approval_is_refused(api: Api) -> None:
     assert api.http.post("/approvals/approval-nope/approve").status_code == 409
     assert api.http.post("/approvals/approval-nope/decline").status_code == 409
+
+
+def test_the_owner_accepts_an_event_advance_on_its_card(api: Api) -> None:
+    api.day.observe(DayStarted(at=NOW, day=LEAN_WEEK))
+    events = api.chat(
+        "Can I get an advance for the Georgiou wedding's costs?",
+        Call("propose_event_advance", {"event_id": BOOKED_EVENT_ID}),
+        Say("Offer, simulated: €2,800.00."),
+    )
+    offer = events[0][1]
+    assert (offer["card_kind"], offer["card"]["kind"]) == ("offer", "event_advance")
+    answer = api.http.post(f"/offers/{offer['card']['id']}/accept")
+    assert answer.status_code == 200
+    assert answer.json()["card_kind"] == "receipt"
+    assert answer.json()["card"]["result"] == "accepted"
+    assert answer.json()["card"]["actor"] == "owner"
+    assert api.bank.calls == []
+    assert api.http.post(f"/offers/{offer['card']['id']}/accept").status_code == 409
+    assert api.http.post(f"/offers/{offer['card']['id']}/decline").status_code == 409
+
+
+def test_an_unknown_offer_is_refused(api: Api) -> None:
+    assert api.http.post("/offers/advance-nope/accept").status_code == 409
+    assert api.http.post("/offers/advance-nope/decline").status_code == 409
 
 
 def test_a_failed_agent_says_try_again_without_details(api: Api) -> None:

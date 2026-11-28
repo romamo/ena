@@ -645,6 +645,7 @@ class EnaTools:
         if isinstance(outcome, AdvanceRefusal):
             return OfferResult(offer=None, amount=None, note=f"No advance: {outcome.reason}")
         self._turn.cards.append(outcome)
+        self._store.add_advance(outcome, event.id)
         if self._store.receipt_for(outcome.id) is None:
             self._store.add_receipt(
                 Receipt(
@@ -670,7 +671,8 @@ class EnaTools:
                 f"Offer, simulated: {euros(outcome.amount_cents)} for {outcome.term_days} days"
                 f" to cover the costs of {event.customer} before its"
                 f" {euros(event.final_payment_cents)} final payment arrives; spare cash"
-                f" {euros(spare)}; not a promise"
+                f" {euros(spare)}; not a promise. Only the owner can accept it, with the tap"
+                " on its card; it is repaid from the final payment through the gate"
             ),
         )
 

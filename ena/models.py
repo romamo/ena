@@ -79,6 +79,14 @@ class OfferKind(StrEnum):
     EVENT_ADVANCE = "event_advance"
 
 
+class AdvanceStatus(StrEnum):
+    """An event advance offer, as the owner left it."""
+
+    OFFERED = "offered"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+
+
 class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
