@@ -117,7 +117,13 @@ Not found. The sandbox catalogue has five products (B2B-APIs, PSD2-AISP-PISP, PS
 | Sign + initiate payment | Works: `authCodeNeeded: true`, a `paymentId` |
 | Payment consent | Same `error=badstate` |
 
-`badstate` comes from IBM API Connect's OAuth provider: the authorize URL gains an `rstate` when it sends the browser to the login page, and the redirect back fails that check. Open: is it a sandbox fault, or an app setting (redirect URI, the app's OAuth provider)? Asked BoC.
+`badstate` comes from IBM API Connect's OAuth provider: the authorize URL gains an `rstate` when it sends the browser to the login page, and the redirect back fails that check.
+
+**Likely cause, found on the consent page (sandbox/subscription):** the OTP input has no `name` attribute, so the OTP is never posted with the form, and the expiry date field is disabled, so it is not posted either. After Confirm the subscription stays `INPROGRESS` with the accounts selected and no `code` comes back. Another team (Marinos) sees the same.
+
+**BoC's answer (elias.spanos, Slack, 2026-11-28):** treats it as a disturbed consent flow (reload, Back, a second authorize, a lost code). Advice: redirect URI exactly `https://localhost/`, run consent once with no reload or Back, copy the `code` from the address bar at once, exchange it, PATCH to `ACTV`; after a `badstate`, abandon that subscription and start a new one.
+
+**Retry on that advice, 2026-11-28:** redirect URI `https://localhost/` (in My Apps and `BOC_REDIRECT_URI`), a new subscription, one clean pass. Still `https://localhost/?state=...&error=badstate`, no `code`. The redirect URI and the flow are ruled out; the consent form is the remaining suspect. Asked BoC to fix the page or say how to activate an `INPROGRESS` subscription in the sandbox.
 
 - Test login for both consent screens: `999999` / `112233`
 - Sample accounts: `351012345671` (ANDREAS MICHAEL, EUR, IBAN `CY11002003510000000012345671`); also `351092345672`, `351012345673`, `351012345674`, `351012345675`, `351092345676` in the activate sample
