@@ -14,12 +14,12 @@ The owner's side of Ena is one chat at phone width; approvals, receipts, the for
 
 ## Screenshots of the running app
 
-The same screens in the chat page as it runs today ([web/](../../web/) against `ena-serve`'s app with the synthetic month), at 390 px phone width. Every card comes from Ena's real tools, the gate and the stand-in bank; the approval's receipt is a simulated payment, and no money moved. Ena's sentence under each card is scripted text, since no model key was set when they were taken: a stand-in agent called each question's tools from [tests/chat_questions.json](../../tests/chat_questions.json) and said a fixed sentence with the figures the tools returned. Taken on 28 November 2026; the receipt's time is the moment it was taken.
+The same screens in the chat page as it runs today (`uv run ena-serve` with the synthetic month as of 16 November, and [web/](../../web/)), at 390 px phone width, with Ena's replies from the model. Every card comes from Ena's tools, the gate and the stand-in bank; the approval's receipt is a simulated payment, and no money moved. Taken on 28 November 2026, in one chat session, the flour invoice approved last. The model's replies still mix up the demo's day with the real date: they call the data stale since 16 November and the flour invoice past due, and the reserve reply carries the page's "unconfirmed" note; retake them once the agent is told the business day.
 
 | Screenshot | Day of the month | What it shows |
 |---|---|---|
-| [1. Approval](screens/1-chat-approval.png) | 4 November | "Pay the flour invoice": the €1,240.00 Mesaoria Mills invoice, above the €500.00 limit, with Approve and Decline |
-| [2. Receipt](screens/2-chat-receipt.png) | 4 November | After Approve: the receipt for the simulated payment, bank status `CPLT` |
+| [1. Approval](screens/1-chat-approval.png) | 16 November | "Pay the flour invoice": the €1,240.00 Mesaoria Mills invoice, above the €500.00 limit, with Approve and Decline |
+| [2. Receipt](screens/2-chat-receipt.png) | 16 November | After Approve: the receipt for the simulated payment, bank status `CPLT` |
 | [3. Cash forecast](screens/3-chat-forecast.png) | 16 November | "Will I be short of cash this month?": eight weeks; the week of 16 November closes at €349.69, below €950.00 |
 | [4. Reserve](screens/4-chat-reserve.png) | 16 November | "Should I set money aside for the loan instalment?": €400.00 for the 25 November instalment |
 | [5. Loan offer](screens/5-chat-loan.png) | 16 November | "Can I get a loan to cover the gap?": a pre-filled €1,000.00 Digital Business Loan over 730 days, marked offer, simulated |
