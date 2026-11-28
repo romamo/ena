@@ -10,8 +10,9 @@ tools' results (§2, Q-3). The model id comes from `ENA_MODEL`.
 1. A question the reply cache holds is answered from it (`ena/cache.py`)
 2. Otherwise the agent runs; each piece of text it writes is sent as it comes, and the
    cards the tools produced (approvals, receipts, the forecast, offers) go before it
-3. No "paid" without a receipt: a piece that says a payment was made, when no tool
-   returned a paid receipt earlier in the turn, is marked unconfirmed. The confirmation
+3. No "paid" without a receipt: a piece that says a payment was made, when the gate
+   returned no paid receipt for a payment asked earlier in the turn, is marked
+   unconfirmed; an old receipt the agent only listed does not count. The confirmation
    the owner can trust is the receipt card, rendered from the gate's receipt
 4. A turn that moved no money and was not marked is cached
 
